@@ -1,0 +1,2 @@
+[env]
+LIBRARY_PATH = { value = "/opt/homebrew/lib", force = true }
