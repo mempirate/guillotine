@@ -3,7 +3,10 @@ extern crate alloc;
 use core::convert::Infallible;
 
 use alloc::vec::Vec;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::{DrawTarget, PixelColor},
+};
 
 use crate::{
     Style,
@@ -22,25 +25,31 @@ pub struct RowStyle {}
 /// storage strategy. An allocation-free implementation will reconcile children directly into
 /// caller-provided arena storage through [`crate::Context`].
 #[derive(Default, PartialEq, Eq)]
-pub struct Row<'a, CE = Infallible> {
-    pub(crate) children: Vec<Element<'a, CE>>,
-    pub(crate) style: Style<RowStyle>,
+pub struct Row<'a, C = Rgb565, CE = Infallible>
+where
+    C: PixelColor,
+{
+    pub(crate) children: Vec<Element<'a, C, CE>>,
+    pub(crate) style: Style<RowStyle, C>,
 }
 
-impl Row<'_> {
+impl<C> Row<'_, C>
+where
+    C: PixelColor,
+{
     /// Creates an empty row.
     pub fn new() -> Self {
         Self { children: Vec::new(), style: Style::default() }
     }
 
     /// Sets the style of this row.
-    pub const fn with_style(mut self, style: Style<RowStyle>) -> Self {
+    pub const fn with_style(mut self, style: Style<RowStyle, C>) -> Self {
         self.style = style;
         self
     }
 
     /// Returns a reference to this row's style.
-    pub const fn style(&self) -> &Style<RowStyle> {
+    pub const fn style(&self) -> &Style<RowStyle, C> {
         &self.style
     }
 
@@ -48,35 +57,48 @@ impl Row<'_> {
     /// that responsibility is delegated to the children themselves.
     pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = Rgb565>,
+        D: DrawTarget<Color = C>,
     {
         draw_box(&self.style, layout, target)
     }
 }
 
-impl<'a> IntoElement for Row<'a> {
-    type Element = Element<'a>;
+impl<'a, C> IntoElement for Row<'a, C>
+where
+    C: PixelColor,
+{
+    type Element = Element<'a, C>;
 
-    fn into_element(self) -> Element<'a> {
+    fn into_element(self) -> Element<'a, C> {
         Element::Row(self)
     }
 }
 
-impl<'a> ParentElement<'a> for Row<'a> {
-    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a>>) {
+impl<'a, C> ParentElement<'a, C> for Row<'a, C>
+where
+    C: PixelColor,
+{
+    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a, C>>) {
         self.children.extend(elements);
     }
 }
 
-impl<'a> StyledElement for Row<'a> {
+impl<C> StyledElement for Row<'_, C>
+where
+    C: PixelColor,
+{
+    type Color = C;
     type Specific = RowStyle;
 
-    fn style_mut(&mut self) -> &mut Style<Self::Specific> {
+    fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color> {
         &mut self.style
     }
 }
 
 /// Creates an empty horizontal container.
-pub fn row<'a>() -> Row<'a> {
+pub fn row<'a, C>() -> Row<'a, C>
+where
+    C: PixelColor,
+{
     Row::new()
 }

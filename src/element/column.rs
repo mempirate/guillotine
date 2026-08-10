@@ -3,7 +3,10 @@ extern crate alloc;
 use core::convert::Infallible;
 
 use alloc::vec::Vec;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::{DrawTarget, PixelColor},
+};
 
 use crate::{
     Style,
@@ -22,25 +25,31 @@ pub struct ColumnStyle {}
 /// storage strategy. An allocation-free implementation will reconcile children directly into
 /// caller-provided arena storage through [`crate::Context`].
 #[derive(Default, PartialEq, Eq)]
-pub struct Column<'a, CE = Infallible> {
-    pub(crate) children: Vec<Element<'a, CE>>,
-    pub(crate) style: Style<ColumnStyle>,
+pub struct Column<'a, C = Rgb565, CE = Infallible>
+where
+    C: PixelColor,
+{
+    pub(crate) children: Vec<Element<'a, C, CE>>,
+    pub(crate) style: Style<ColumnStyle, C>,
 }
 
-impl Column<'_> {
+impl<C> Column<'_, C>
+where
+    C: PixelColor,
+{
     /// Creates an empty column.
     pub fn new() -> Self {
         Self { children: Vec::new(), style: Style::default() }
     }
 
     /// Sets the style of this column.
-    pub const fn with_style(mut self, style: Style<ColumnStyle>) -> Self {
+    pub const fn with_style(mut self, style: Style<ColumnStyle, C>) -> Self {
         self.style = style;
         self
     }
 
     /// Returns a reference to this column's style.
-    pub const fn style(&self) -> &Style<ColumnStyle> {
+    pub const fn style(&self) -> &Style<ColumnStyle, C> {
         &self.style
     }
 
@@ -48,35 +57,48 @@ impl Column<'_> {
     /// that responsibility is delegated to the children themselves.
     pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = Rgb565>,
+        D: DrawTarget<Color = C>,
     {
         draw_box(&self.style, layout, target)
     }
 }
 
-impl<'a> IntoElement for Column<'a> {
-    type Element = Element<'a>;
+impl<'a, C> IntoElement for Column<'a, C>
+where
+    C: PixelColor,
+{
+    type Element = Element<'a, C>;
 
-    fn into_element(self) -> Element<'a> {
+    fn into_element(self) -> Element<'a, C> {
         Element::Column(self)
     }
 }
 
-impl<'a> ParentElement<'a> for Column<'a> {
-    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a>>) {
+impl<'a, C> ParentElement<'a, C> for Column<'a, C>
+where
+    C: PixelColor,
+{
+    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a, C>>) {
         self.children.extend(elements);
     }
 }
 
-impl<'a> StyledElement for Column<'a> {
+impl<C> StyledElement for Column<'_, C>
+where
+    C: PixelColor,
+{
+    type Color = C;
     type Specific = ColumnStyle;
 
-    fn style_mut(&mut self) -> &mut Style<Self::Specific> {
+    fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color> {
         &mut self.style
     }
 }
 
 /// Creates an empty vertical container.
-pub fn column<'a>() -> Column<'a> {
+pub fn column<'a, C>() -> Column<'a, C>
+where
+    C: PixelColor,
+{
     Column::new()
 }

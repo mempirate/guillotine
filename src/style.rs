@@ -1,5 +1,8 @@
 //! Styling utilities.
-use embedded_graphics::{pixelcolor::Rgb565, prelude::Size};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::{PixelColor, Size},
+};
 
 use crate::Constraints;
 
@@ -126,7 +129,7 @@ impl BoxStyle {
     }
 }
 
-/// Common style type shared between all [`Element`] variants.
+/// Common style type shared between all [`crate::Element`] variants.
 ///
 /// # Box model
 ///
@@ -149,7 +152,7 @@ impl BoxStyle {
 /// border box; when it is not set, the border box is derived from the content size plus padding and
 /// border widths. The margin is then added outside the border box to produce the element's outer
 /// size.
-#[derive(Default, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct Style<S: Default, C = Rgb565> {
     // Common properties (including Box-model properties).
     // TODO: Replace with `Insets`
@@ -167,6 +170,20 @@ pub struct Style<S: Default, C = Rgb565> {
     pub size: Option<Size>,
     /// Specific style properties for each element kind.
     pub specific: S,
+}
+
+impl<S: Default, C> Default for Style<S, C> {
+    fn default() -> Self {
+        Self {
+            margin: 0,
+            padding: 0,
+            border: 0,
+            border_color: None,
+            background: None,
+            size: None,
+            specific: S::default(),
+        }
+    }
 }
 
 impl<S: Default, C> Style<S, C> {
@@ -197,11 +214,14 @@ impl<S: Default, C> core::ops::DerefMut for Style<S, C> {
 
 /// A blanket trait for elements that can be styled. Import [`StyledElement`] to use.
 pub trait StyledElement: Sized {
+    /// The pixel color used by this element.
+    type Color: PixelColor;
+
     /// The specific style type for this element.
     type Specific: Default;
 
     /// Returns a mutable reference to the element's specific style.
-    fn style_mut(&mut self) -> &mut Style<Self::Specific>;
+    fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color>;
 
     /// Sets the padding of the element.
     fn padding(mut self, padding: u32) -> Self {
@@ -216,7 +236,7 @@ pub trait StyledElement: Sized {
     }
 
     /// Sets the background color of the element.
-    fn background(mut self, color: Rgb565) -> Self {
+    fn background(mut self, color: Self::Color) -> Self {
         self.style_mut().background = Some(color);
         self
     }
@@ -228,7 +248,7 @@ pub trait StyledElement: Sized {
     }
 
     /// Sets the border color of the element.
-    fn border_color(mut self, color: Rgb565) -> Self {
+    fn border_color(mut self, color: Self::Color) -> Self {
         self.style_mut().border_color = Some(color);
         self
     }

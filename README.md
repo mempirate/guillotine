@@ -30,7 +30,7 @@ In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
 - [ ] Custom components & widgets (with custom style)
 - [ ] Modals / floating windows
 - [ ] Alignments (center, right, bottom, etc)
-- [ ] Color themes
+- [x] Basic foreground/background color themes
 - [ ] Support for interaction (touch, hover, click)
 
 
@@ -91,12 +91,16 @@ fn main() {
 }
 ```
 
+Element trees use the display's `PixelColor` type throughout. `Rgb565` views keep the API shown
+above; other targets select their color once at the `Render<Color>` boundary, after which element
+constructors and style methods infer it. See the [binary-color example](examples/binary.rs).
+
 ## Roadmap
 
 ### v0.0.1
 - [x] Try to mimic GPUI declaration style: https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/hello_world.rs
 - [x] Low-level `Element` / `ParentElement` trait for custom elements and widgets
-- [ ] Support generic `Color`
+- [x] Support generic `PixelColor`
 - [ ] Full immediate mode redrawing
   - [ ] Clipping / overflow behaviour
 - [ ] Make repo ready for publishing:

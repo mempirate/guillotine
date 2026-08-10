@@ -1,13 +1,13 @@
 use embedded_graphics::{
     Drawable as _,
     mono_font::{MonoFont, MonoTextStyle, MonoTextStyleBuilder, ascii::FONT_10X20},
-    pixelcolor::Rgb565,
-    prelude::{Dimensions as _, DrawTarget, Point, RgbColor as _, Size},
+    pixelcolor::{BinaryColor, Rgb565},
+    prelude::{Dimensions as _, DrawTarget, PixelColor, Point, Size},
     text::{Baseline, Text as GraphicsText},
 };
 
 use crate::{
-    Style,
+    Style, Theme,
     element::{Element, IntoElement, draw_box},
     layout::BoxLayout,
     style::StyledElement,
@@ -15,32 +15,38 @@ use crate::{
 
 /// Text style.
 #[derive(PartialEq, Eq)]
-pub struct TextStyle {
+pub struct TextStyle<C = Rgb565> {
     font: Font,
-    color: Rgb565,
+    color: Option<C>,
 }
 
-impl Default for TextStyle {
+impl<C> Default for TextStyle<C> {
     fn default() -> Self {
-        Self { font: Font::mono(&FONT_10X20), color: Rgb565::WHITE }
+        Self { font: Font::mono(&FONT_10X20), color: None }
     }
 }
 
 /// An ephemeral text declaration.
 #[derive(PartialEq, Eq)]
-pub struct Text<'a> {
+pub struct Text<'a, C = Rgb565>
+where
+    C: PixelColor,
+{
     content: &'a str,
-    style: Style<TextStyle>,
+    style: Style<TextStyle<C>, C>,
 }
 
-impl<'a> Text<'a> {
+impl<'a, C> Text<'a, C>
+where
+    C: PixelColor,
+{
     /// Creates a text declaration that borrows its content for this render.
     pub fn new(content: &'a str) -> Self {
         Self { content, style: Style::default() }
     }
 
     /// Sets the style of this text.
-    pub const fn with_style(mut self, style: Style<TextStyle>) -> Self {
+    pub const fn with_style(mut self, style: Style<TextStyle<C>, C>) -> Self {
         self.style = style;
         self
     }
@@ -51,17 +57,16 @@ impl<'a> Text<'a> {
     }
 
     /// Returns a reference to this text's style.
-    pub fn style(&self) -> &Style<TextStyle> {
+    pub const fn style(&self) -> &Style<TextStyle<C>, C> {
         &self.style
     }
 
     /// Measures the size of this text.
     pub fn measure(&self) -> Size {
-        // Temporary default until TextStyle owns a font and text color.
-        //
         match self.style.font {
             Font::Mono(font) => {
-                let character_style = MonoTextStyle::new(font, self.style.color);
+                // Text color doesn't affect geometry, so measurement doesn't need a theme.
+                let character_style = MonoTextStyle::new(font, BinaryColor::On);
 
                 let bounds = GraphicsText::with_baseline(
                     self.content,
@@ -77,16 +82,23 @@ impl<'a> Text<'a> {
     }
 
     /// Draws this text box onto the given target, using the provided layout.
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
+    pub(crate) fn draw<D>(
+        &self,
+        layout: &BoxLayout,
+        target: &mut D,
+        theme: &Theme<C>,
+    ) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = Rgb565>,
+        D: DrawTarget<Color = C>,
     {
         draw_box(&self.style, layout, target)?;
 
         match self.style.font {
             Font::Mono(font) => {
-                let character_style =
-                    MonoTextStyleBuilder::new().font(font).text_color(self.style.color).build();
+                let character_style = MonoTextStyleBuilder::new()
+                    .font(font)
+                    .text_color(self.style.color.unwrap_or(theme.foreground))
+                    .build();
 
                 GraphicsText::with_baseline(
                     self.content,
@@ -101,24 +113,34 @@ impl<'a> Text<'a> {
     }
 }
 
-impl<'a> IntoElement for Text<'a> {
-    type Element = Element<'a>;
+impl<'a, C> IntoElement for Text<'a, C>
+where
+    C: PixelColor,
+{
+    type Element = Element<'a, C>;
 
-    fn into_element(self) -> Element<'a> {
+    fn into_element(self) -> Element<'a, C> {
         Element::Text(self)
     }
 }
 
-impl<'a> StyledElement for Text<'a> {
-    type Specific = TextStyle;
+impl<C> StyledElement for Text<'_, C>
+where
+    C: PixelColor,
+{
+    type Color = C;
+    type Specific = TextStyle<C>;
 
-    fn style_mut(&mut self) -> &mut Style<Self::Specific> {
+    fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color> {
         &mut self.style
     }
 }
 
 /// Creates a text declaration borrowing `content` for this render.
-pub fn text(content: &str) -> Text<'_> {
+pub fn text<C>(content: &str) -> Text<'_, C>
+where
+    C: PixelColor,
+{
     Text::new(content)
 }
 
@@ -146,7 +168,10 @@ impl Default for Font {
 }
 
 /// A trait for elements that can be styled with text properties.
-pub trait TextStyledElement: StyledElement<Specific = TextStyle> {
+pub trait TextStyledElement<C>: StyledElement<Color = C, Specific = TextStyle<C>>
+where
+    C: PixelColor,
+{
     /// Sets the font.
     fn font(mut self, font: Font) -> Self {
         self.style_mut().specific.font = font;
@@ -154,10 +179,15 @@ pub trait TextStyledElement: StyledElement<Specific = TextStyle> {
     }
 
     /// Sets the text color.
-    fn text_color(mut self, color: Rgb565) -> Self {
-        self.style_mut().specific.color = color;
+    fn text_color(mut self, color: C) -> Self {
+        self.style_mut().specific.color = Some(color);
         self
     }
 }
 
-impl<T> TextStyledElement for T where T: StyledElement<Specific = TextStyle> {}
+impl<T, C> TextStyledElement<C> for T
+where
+    T: StyledElement<Color = C, Specific = TextStyle<C>>,
+    C: PixelColor,
+{
+}

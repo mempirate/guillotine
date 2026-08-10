@@ -9,8 +9,11 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::{DrawTarget, OriginDimensions, Point, RgbColor, Size},
+    pixelcolor::{
+        Bgr555, Bgr565, Bgr666, Bgr888, BinaryColor, Gray2, Gray4, Gray8, Rgb555, Rgb565, Rgb666,
+        Rgb888,
+    },
+    prelude::{DrawTarget, GrayColor, OriginDimensions, PixelColor, Point, RgbColor, Size},
 };
 
 pub use element::*;
@@ -18,39 +21,103 @@ pub use style::{Insets, Style};
 
 use crate::layout::{Constraints, Layout};
 
+/// Colors used by the UI when an element doesn't specify a color explicitly.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Theme<C>
+where
+    C: PixelColor,
+{
+    /// Color used to clear the display before drawing a frame.
+    pub background: C,
+    /// Default text color.
+    pub foreground: C,
+}
+
+impl<C> Theme<C>
+where
+    C: PixelColor,
+{
+    /// Creates a theme from its background and foreground colors.
+    pub const fn new(background: C, foreground: C) -> Self {
+        Self { background, foreground }
+    }
+}
+
+macro_rules! impl_rgb_theme {
+    ($($color:ty),+ $(,)?) => {
+        $(
+            impl Default for Theme<$color> {
+                fn default() -> Self {
+                    Self::new(<$color>::BLACK, <$color>::WHITE)
+                }
+            }
+        )+
+    };
+}
+
+impl_rgb_theme!(Rgb555, Bgr555, Rgb565, Bgr565, Rgb666, Bgr666, Rgb888, Bgr888);
+
+macro_rules! impl_gray_theme {
+    ($($color:ty),+ $(,)?) => {
+        $(
+            impl Default for Theme<$color> {
+                fn default() -> Self {
+                    Self::new(<$color>::BLACK, <$color>::WHITE)
+                }
+            }
+        )+
+    };
+}
+
+impl_gray_theme!(Gray2, Gray4, Gray8);
+
+impl Default for Theme<BinaryColor> {
+    fn default() -> Self {
+        Self::new(BinaryColor::Off, BinaryColor::On)
+    }
+}
+
 /// The [`Ui`] struct is the main entrypoint for the Guillotine UI framework.
 /// It manages the display and takes care of rendering the UI from a tree of [`Element`]s,
 /// with [`Self::render`].
 pub struct Ui<D>
 where
-    D: DrawTarget<Color = Rgb565> + OriginDimensions,
+    D: DrawTarget + OriginDimensions,
 {
     display: D,
     cx: Context,
-
-    background: Rgb565,
+    theme: Theme<D::Color>,
 }
 
 impl<D> Ui<D>
 where
-    D: DrawTarget<Color = Rgb565> + OriginDimensions,
+    D: DrawTarget + OriginDimensions,
 {
-    /// Creates a new [`Ui`] instance with the given display.
-    pub fn new(display: D) -> Self {
-        Self { display, cx: Context::default(), background: D::Color::BLACK }
+    /// Creates a new [`Ui`] instance with an explicit theme.
+    ///
+    /// This constructor supports arbitrary custom [`PixelColor`] implementations. For the
+    /// standard embedded-graphics color types, [`Ui::new`] supplies a black and white theme.
+    pub fn with_theme(display: D, theme: Theme<D::Color>) -> Self {
+        Self { display, cx: Context::default(), theme }
     }
 
     /// Returns a new [`Ui`] instance with the given background color. This background color will
     /// be used to clear dirty regions before rendering.
-    pub fn with_background(mut self, background: Rgb565) -> Self {
-        self.background = background;
+    pub const fn with_background(mut self, background: D::Color) -> Self {
+        self.theme.background = background;
+        self
+    }
+
+    /// Returns a new [`Ui`] instance with the given default text color.
+    pub const fn with_foreground(mut self, foreground: D::Color) -> Self {
+        self.theme.foreground = foreground;
         self
     }
 
     /// Renders the given `view` onto the display.
     pub fn render<V>(&mut self, view: &V) -> Result<(), D::Error>
     where
-        V: Render,
+        V: Render<D::Color>,
     {
         let root = view.render(&mut self.cx).into_element();
 
@@ -60,9 +127,9 @@ where
         let mut tree = FrameTree::new();
         let _ = tree.resolve(root, viewport);
 
-        self.display.clear(self.background)?;
+        self.display.clear(self.theme.background)?;
 
-        tree.draw(&mut self.display)
+        tree.draw(&mut self.display, &self.theme)
     }
 
     /// Returns a reference to the display.
@@ -78,6 +145,22 @@ where
     /// Returns the display and consumes the [`Ui`] instance.
     pub fn into_display(self) -> D {
         self.display
+    }
+
+    /// Returns the UI theme.
+    pub const fn theme(&self) -> &Theme<D::Color> {
+        &self.theme
+    }
+}
+
+impl<D> Ui<D>
+where
+    D: DrawTarget + OriginDimensions,
+    Theme<D::Color>: Default,
+{
+    /// Creates a new [`Ui`] instance with a black background and white foreground.
+    pub fn new(display: D) -> Self {
+        Self::with_theme(display, Theme::default())
     }
 }
 
@@ -95,19 +178,25 @@ enum Axis {
 /// calculate hard constraints (inner_constraints) and push them down to the children.
 /// - Once the leafs are resolved, push sizes back up the tree. For container elements,
 /// also calculate relative offsets for each child.
-struct FrameTree<'a> {
-    nodes: Vec<Node<'a>>,
+struct FrameTree<'a, C>
+where
+    C: PixelColor,
+{
+    nodes: Vec<Node<'a, C>>,
     root: Option<NodeIndex>,
 }
 
-impl<'a> FrameTree<'a> {
+impl<'a, C> FrameTree<'a, C>
+where
+    C: PixelColor,
+{
     /// Creates a new, empty frame tree.
     fn new() -> Self {
         Self { nodes: Vec::new(), root: None }
     }
 
     /// Inserts a new node into the frame tree and returns its index.
-    fn insert(&mut self, node: Node<'a>) -> NodeIndex {
+    fn insert(&mut self, node: Node<'a, C>) -> NodeIndex {
         let index = self.nodes.len();
         self.nodes.push(node);
         index
@@ -120,22 +209,22 @@ impl<'a> FrameTree<'a> {
     }
 
     /// Resolves the root of the frame tree with the given element and constraints.
-    pub(crate) fn resolve(&mut self, root: Element<'a>, constraints: Constraints) -> NodeIndex {
+    pub(crate) fn resolve(&mut self, root: Element<'a, C>, constraints: Constraints) -> NodeIndex {
         let root = resolve(self, root, constraints, None);
         self.root = Some(root);
         root
     }
 
     /// Draws the frame tree onto the given display, starting with `root` at `offset`.
-    pub(crate) fn draw<D>(&mut self, display: &mut D) -> Result<(), D::Error>
+    pub(crate) fn draw<D>(&mut self, display: &mut D, theme: &Theme<C>) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = Rgb565>,
+        D: DrawTarget<Color = C>,
     {
         let Some(root) = self.root else {
             return Ok(());
         };
 
-        self.draw_node(root, Point::zero(), display)
+        self.draw_node(root, Point::zero(), display, theme)
     }
 
     fn draw_node<D>(
@@ -143,19 +232,20 @@ impl<'a> FrameTree<'a> {
         index: NodeIndex,
         parent_origin: Point,
         display: &mut D,
+        theme: &Theme<C>,
     ) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = Rgb565>,
+        D: DrawTarget<Color = C>,
     {
         let node = &mut self.nodes[index];
         let layout = node.layout.resolve(parent_origin);
 
-        node.element.draw(&layout, display)?;
+        node.element.draw(&layout, display, theme)?;
 
         let mut child = node.child;
 
         while let Some(index) = child {
-            self.draw_node(index, layout.content.top_left, display)?;
+            self.draw_node(index, layout.content.top_left, display, theme)?;
             child = self.nodes[index].sibling;
         }
 
@@ -299,12 +389,15 @@ impl SizeExt for Size {
 }
 
 /// Recursively populates the frame tree with the given element and parent node.
-fn resolve<'a>(
-    tree: &mut FrameTree<'a>,
-    mut element: Element<'a>,
+fn resolve<'a, C>(
+    tree: &mut FrameTree<'a, C>,
+    mut element: Element<'a, C>,
     constraints: Constraints,
     parent: Option<NodeIndex>,
-) -> NodeIndex {
+) -> NodeIndex
+where
+    C: PixelColor,
+{
     // Calculate the content constraints for the current element. These are effectively the
     // constraints that will be pushed down to the children.
     let content_constraints = element.box_style().content_constraints(constraints);
@@ -338,9 +431,12 @@ fn resolve<'a>(
 }
 
 /// A node in a [`FrameTree`].
-struct Node<'a> {
+struct Node<'a, C>
+where
+    C: PixelColor,
+{
     /// The node's element.
-    element: Element<'a>,
+    element: Element<'a, C>,
     /// The layout of this node.
     layout: Layout,
 
@@ -405,9 +501,17 @@ impl<T: IntoElement> FluentBuilder for T {}
 
 /// The [`Render`] trait is implemented by types that can be rendered into an [`Element`]. Use this
 /// trait to define UI elements.
-pub trait Render {
+///
+/// `C` defaults to [`Rgb565`] to preserve the simple API for existing views. A view for another
+/// display color declares that color once in its implementation, for example
+/// `impl Render<BinaryColor> for MyView`. Element constructors inside `render` infer the color from
+/// its return type and don't need explicit generic arguments.
+pub trait Render<C = Rgb565>
+where
+    C: PixelColor,
+{
     /// Renders this element into an [`Element`] using the given [`Context`].
-    fn render<'a>(&'a self, cx: &mut Context) -> impl IntoElement<Element = Element<'a>>;
+    fn render<'a>(&'a self, cx: &mut Context) -> impl IntoElement<Element = Element<'a, C>>;
 }
 
 /// For now, unused. In the future, will be used for context management, such as:
@@ -460,7 +564,7 @@ mod tests {
 
     #[test]
     fn column_composes_heterogeneous_and_conditional_children() {
-        let element = column()
+        let element: Element<'_> = column()
             .child(text("First"))
             .child(row().child(text("Nested")))
             .when(true, |column| column.child(text("Conditional")))
