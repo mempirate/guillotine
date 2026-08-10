@@ -83,6 +83,13 @@ where
 
 type NodeIndex = usize;
 
+/// The axis along which a container lays out its children.
+#[derive(Clone, Copy)]
+enum Axis {
+    Horizontal,
+    Vertical,
+}
+
 /// Operations, single pass:
 /// - Recursively walk the element tree to build the frame tree. For each element,
 /// calculate hard constraints (inner_constraints) and push them down to the children.
@@ -165,15 +172,16 @@ impl<'a> FrameTree<'a> {
         let content_constraints = box_style.content_constraints(constraints);
 
         // Determine the content's intrinsic size without retaining a
-        // borrow of `self.nodes[index]` while layout_row mutates children.
+        // borrow of `self.nodes[index]` while layout_children mutates children.
         enum ContentLayout {
-            Row,
+            Container(Axis),
             // A leaf with an inherent size.
             Leaf(Size),
         }
 
         let content_layout = match &self.nodes[index].element {
-            Element::Row(_) => ContentLayout::Row,
+            Element::Column(_) => ContentLayout::Container(Axis::Vertical),
+            Element::Row(_) => ContentLayout::Container(Axis::Horizontal),
             Element::Text(text) => {
                 ContentLayout::Leaf(content_constraints.constrain(text.measure()))
             }
@@ -181,7 +189,9 @@ impl<'a> FrameTree<'a> {
         };
 
         let intrinsic_content_size = match content_layout {
-            ContentLayout::Row => self.layout_row(index, content_constraints),
+            ContentLayout::Container(axis) => {
+                self.layout_children(index, content_constraints, axis)
+            }
 
             ContentLayout::Leaf(size) => size,
         };
@@ -227,12 +237,13 @@ impl<'a> FrameTree<'a> {
         };
     }
 
-    /// Lays out the row at `index`:
+    /// Lays out the container at `index` along `axis`:
     /// - Traverses the children and sets their offsets.
-    /// - Records intrinsic width and height, and returns the constrained size.
-    fn layout_row(&mut self, index: NodeIndex, constraints: Constraints) -> Size {
-        let mut width: u32 = 0;
-        let mut height: u32 = 0;
+    /// - Sums the children's sizes on the main axis and takes their maximum size on the cross axis.
+    /// - Returns the constrained intrinsic size.
+    fn layout_children(&mut self, index: NodeIndex, constraints: Constraints, axis: Axis) -> Size {
+        let mut main_size: u32 = 0;
+        let mut cross_size: u32 = 0;
 
         // Get the optional child.
         let mut child = self.nodes[index].child;
@@ -240,19 +251,32 @@ impl<'a> FrameTree<'a> {
         while let Some(child_idx) = child {
             let size = self.nodes[child_idx].layout.outer_size;
 
-            let x = i32::try_from(width).unwrap_or(i32::MAX);
+            let main_offset = i32::try_from(main_size).unwrap_or(i32::MAX);
 
-            // TODO: Only allows for top alignment, and no gap.
-            self.nodes[child_idx].layout.set_offset(Point::new(x, 0));
+            // TODO: Only allows for start alignment, and no gap.
+            let offset = match axis {
+                Axis::Horizontal => Point::new(main_offset, 0),
+                Axis::Vertical => Point::new(0, main_offset),
+            };
+            self.nodes[child_idx].layout.set_offset(offset);
 
-            width = width.saturating_add(size.width);
+            let (child_main_size, child_cross_size) = match axis {
+                Axis::Horizontal => (size.width, size.height),
+                Axis::Vertical => (size.height, size.width),
+            };
 
-            height = height.max(size.height);
+            main_size = main_size.saturating_add(child_main_size);
+            cross_size = cross_size.max(child_cross_size);
 
             child = self.nodes[child_idx].sibling;
         }
 
-        constraints.constrain(Size::new(width, height))
+        let intrinsic_size = match axis {
+            Axis::Horizontal => Size::new(main_size, cross_size),
+            Axis::Vertical => Size::new(cross_size, main_size),
+        };
+
+        constraints.constrain(intrinsic_size)
     }
 }
 
@@ -394,6 +418,13 @@ pub struct Context {}
 
 #[cfg(test)]
 mod tests {
+    use embedded_graphics::{
+        mock_display::MockDisplay,
+        pixelcolor::Rgb565,
+        prelude::{Point, RgbColor as _, Size},
+        primitives::Rectangle,
+    };
+
     use super::*;
 
     struct Dashboard {
@@ -425,5 +456,78 @@ mod tests {
             &row.children[2],
             Element::Text(text) if text.content() == "Conditional"
         ));
+    }
+
+    #[test]
+    fn column_composes_heterogeneous_and_conditional_children() {
+        let element = column()
+            .child(text("First"))
+            .child(row().child(text("Nested")))
+            .when(true, |column| column.child(text("Conditional")))
+            .children([text("Fourth"), text("Fifth")])
+            .into_element();
+
+        let Element::Column(column) = element else {
+            panic!("expected a column");
+        };
+
+        assert_eq!(column.children.len(), 5);
+        assert!(matches!(&column.children[1], Element::Row(_)));
+        assert!(matches!(
+            &column.children[2],
+            Element::Text(text) if text.content() == "Conditional"
+        ));
+    }
+
+    #[test]
+    fn column_stacks_children_vertically_and_uses_the_widest_child() {
+        fn sized_text(content: &str, size: Size) -> Text<'_> {
+            text(content).with_style(Style { size: Some(size), ..Style::default() })
+        }
+
+        let element = column()
+            .child(
+                row()
+                    .child(sized_text("a", Size::new(10, 5)))
+                    .child(sized_text("b", Size::new(20, 7))),
+            )
+            .child(sized_text("c", Size::new(15, 9)))
+            .into_element();
+
+        let mut tree = FrameTree::new();
+        let root = tree.resolve(element, Constraints::exact(Size::new(100, 100)).loosen());
+
+        assert_eq!(tree.nodes[root].layout.outer_size, Size::new(30, 16));
+
+        let row = tree.nodes[root].child.expect("column should have a row child");
+        let last_text = tree.nodes[row].sibling.expect("column should have a text child");
+        assert_eq!(tree.nodes[row].layout.offset, Point::zero());
+        assert_eq!(tree.nodes[last_text].layout.offset, Point::new(0, 7));
+
+        let first_text = tree.nodes[row].child.expect("row should have a text child");
+        let second_text = tree.nodes[first_text].sibling.expect("row should have two children");
+        assert_eq!(tree.nodes[first_text].layout.offset, Point::zero());
+        assert_eq!(tree.nodes[second_text].layout.offset, Point::new(10, 0));
+    }
+
+    #[test]
+    fn column_draws_its_styled_border_box() {
+        let column = column().with_style(Style {
+            border: 1,
+            border_color: Some(Rgb565::BLUE),
+            background: Some(Rgb565::RED),
+            ..Style::default()
+        });
+        let layout = layout::BoxLayout {
+            border: Rectangle::new(Point::new(1, 1), Size::new(4, 4)),
+            content: Rectangle::new(Point::new(2, 2), Size::new(2, 2)),
+        };
+        let mut display = MockDisplay::new();
+
+        column.draw(&layout, &mut display).unwrap();
+
+        assert_eq!(display.get_pixel(Point::new(1, 1)), Some(Rgb565::BLUE));
+        assert_eq!(display.get_pixel(Point::new(2, 2)), Some(Rgb565::RED));
+        assert_eq!(display.get_pixel(Point::zero()), None);
     }
 }

@@ -2,14 +2,13 @@ use embedded_graphics::{
     Drawable as _,
     mono_font::{MonoFont, MonoTextStyle, MonoTextStyleBuilder, ascii::FONT_10X20},
     pixelcolor::Rgb565,
-    prelude::{Dimensions as _, DrawTarget, Point, Primitive as _, RgbColor as _, Size},
-    primitives::PrimitiveStyleBuilder,
+    prelude::{Dimensions as _, DrawTarget, Point, RgbColor as _, Size},
     text::{Baseline, Text as GraphicsText},
 };
 
 use crate::{
     Style,
-    element::{Element, IntoElement},
+    element::{Element, IntoElement, draw_box},
     layout::BoxLayout,
     style::StyledElement,
 };
@@ -82,17 +81,7 @@ impl<'a> Text<'a> {
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        let mut box_style = PrimitiveStyleBuilder::new().stroke_width(self.style.border);
-
-        if let Some(color) = self.style.border_color {
-            box_style = box_style.stroke_color(color);
-        }
-
-        if let Some(color) = self.style.background {
-            box_style = box_style.fill_color(color);
-        }
-
-        layout.border.into_styled(box_style.build()).draw(target)?;
+        draw_box(&self.style, layout, target)?;
 
         match self.style.font {
             Font::Mono(font) => {

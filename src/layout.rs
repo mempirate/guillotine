@@ -69,19 +69,8 @@ impl Layout {
         }
     }
 
-    /// Resolves the absolute bounds of the complete outer box.
-    pub(crate) fn set_absolute_bounds(&mut self, parent_origin: Point) {
-        let origin = parent_origin + self.offset;
-
-        self.bounds = Some(Rectangle::new(origin, self.outer_size));
-    }
-
     pub(crate) fn set_offset(&mut self, offset: Point) {
         self.offset = offset;
-    }
-
-    pub(crate) fn origin(&self) -> Option<Point> {
-        self.bounds.map(|bounds| bounds.top_left)
     }
 
     /// Resolves the absolute bounds of the complete box layout.
@@ -91,7 +80,6 @@ impl Layout {
         let content_origin = outer_origin + self.content_offset;
 
         BoxLayout {
-            margin: Rectangle::new(outer_origin, self.outer_size),
             border: Rectangle::new(border_origin, self.border_size),
             content: Rectangle::new(content_origin, self.content_size),
         }
@@ -101,7 +89,6 @@ impl Layout {
 /// Fully resolved box layout. Contains absolute positioned rectangles for margin, border and
 /// content.
 pub(crate) struct BoxLayout {
-    pub(crate) margin: Rectangle,
     pub(crate) border: Rectangle,
     pub(crate) content: Rectangle,
 }

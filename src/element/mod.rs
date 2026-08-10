@@ -1,16 +1,23 @@
 extern crate alloc;
 
+mod column;
 mod row;
 mod text;
 
 use alloc::vec::Vec;
 use core::convert::Infallible;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
+use embedded_graphics::{
+    Drawable as _,
+    pixelcolor::Rgb565,
+    prelude::{DrawTarget, Primitive as _},
+    primitives::PrimitiveStyleBuilder,
+};
 
+pub use column::*;
 pub use row::*;
 pub use text::*;
 
-use crate::{layout::BoxLayout, style::BoxStyle};
+use crate::{Style, layout::BoxLayout, style::BoxStyle};
 
 /// A value that can be converted into Guillotine's closed element enum.
 pub trait IntoElement {
@@ -28,6 +35,8 @@ pub trait IntoElement {
 /// [`Text`] may borrow their content from application state.
 #[derive(PartialEq, Eq)]
 pub enum Element<'a, CE = Infallible> {
+    /// A vertical container.
+    Column(Column<'a, CE>),
     /// A horizontal container.
     Row(Row<'a, CE>),
     /// A text element.
@@ -50,6 +59,7 @@ impl<'a> Element<'a> {
     #[allow(unused)]
     pub(crate) fn children(&self) -> Option<&[Element<'a>]> {
         match self {
+            Element::Column(column) => Some(&column.children),
             Element::Row(row) => Some(&row.children),
             _ => None,
         }
@@ -58,6 +68,7 @@ impl<'a> Element<'a> {
     /// Takes this element's children, setting them to null.
     pub(crate) fn take_children(&mut self) -> Option<Vec<Element<'a>>> {
         match self {
+            Element::Column(column) => Some(core::mem::take(&mut column.children)),
             Element::Row(row) => Some(core::mem::take(&mut row.children)),
             _ => None,
         }
@@ -66,6 +77,7 @@ impl<'a> Element<'a> {
     /// Returns the box style of this element.
     pub(crate) fn box_style(&self) -> BoxStyle {
         match self {
+            Element::Column(column) => column.style().box_style(),
             Element::Row(row) => row.style().box_style(),
             Element::Text(text) => text.style().box_style(),
             Element::Custom(never) => match *never {},
@@ -77,11 +89,35 @@ impl<'a> Element<'a> {
         D: DrawTarget<Color = Rgb565>,
     {
         match self {
+            Element::Column(column) => column.draw(layout, target),
             Element::Row(row) => row.draw(layout, target),
             Element::Text(text) => text.draw(layout, target),
             Element::Custom(_) => unimplemented!("custom elements are not implemented"),
         }
     }
+}
+
+/// Draws the common border box shared by all built-in elements.
+pub(crate) fn draw_box<S, D>(
+    style: &Style<S>,
+    layout: &BoxLayout,
+    target: &mut D,
+) -> Result<(), D::Error>
+where
+    S: Default,
+    D: DrawTarget<Color = Rgb565>,
+{
+    let mut primitive_style = PrimitiveStyleBuilder::new().stroke_width(style.border);
+
+    if let Some(color) = style.border_color {
+        primitive_style = primitive_style.stroke_color(color);
+    }
+
+    if let Some(color) = style.background {
+        primitive_style = primitive_style.fill_color(color);
+    }
+
+    layout.border.into_styled(primitive_style.build()).draw(target)
 }
 
 impl<'a> IntoElement for Element<'a> {
