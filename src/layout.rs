@@ -83,4 +83,25 @@ impl Layout {
     pub(crate) fn origin(&self) -> Option<Point> {
         self.bounds.map(|bounds| bounds.top_left)
     }
+
+    /// Resolves the absolute bounds of the complete box layout.
+    pub(crate) fn resolve(&self, parent_origin: Point) -> BoxLayout {
+        let outer_origin = parent_origin + self.offset;
+        let border_origin = outer_origin + self.border_offset;
+        let content_origin = outer_origin + self.content_offset;
+
+        BoxLayout {
+            margin: Rectangle::new(outer_origin, self.outer_size),
+            border: Rectangle::new(border_origin, self.border_size),
+            content: Rectangle::new(content_origin, self.content_size),
+        }
+    }
+}
+
+/// Fully resolved box layout. Contains absolute positioned rectangles for margin, border and
+/// content.
+pub(crate) struct BoxLayout {
+    pub(crate) margin: Rectangle,
+    pub(crate) border: Rectangle,
+    pub(crate) content: Rectangle,
 }

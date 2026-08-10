@@ -3,10 +3,18 @@ extern crate alloc;
 use core::convert::Infallible;
 
 use alloc::vec::Vec;
+use embedded_graphics::{
+    Drawable as _,
+    pixelcolor::Rgb565,
+    prelude::{DrawTarget, Primitive as _},
+    primitives::PrimitiveStyleBuilder,
+};
 
 use crate::{
     Style,
     element::{Element, IntoElement, ParentElement},
+    layout::BoxLayout,
+    style::StyledElement,
 };
 
 /// Style for this row.
@@ -40,6 +48,29 @@ impl Row<'_> {
     pub fn style(&self) -> &Style<RowStyle> {
         &self.style
     }
+
+    /// Draws this row onto the given target, using the provided layout. Does NOT draw children,
+    /// that responsibility is delegated to the children themselves.
+    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Rgb565>,
+    {
+        // Build the primitive style for the border.
+        let mut style = PrimitiveStyleBuilder::new().stroke_width(self.style.border);
+
+        if let Some(color) = self.style.border_color {
+            style = style.stroke_color(color);
+        }
+
+        if let Some(color) = self.style.background {
+            style = style.fill_color(color);
+        }
+
+        // Draw the border box.
+        layout.border.into_styled(style.build()).draw(target)?;
+
+        Ok(())
+    }
 }
 
 impl<'a> IntoElement for Row<'a> {
@@ -53,6 +84,14 @@ impl<'a> IntoElement for Row<'a> {
 impl<'a> ParentElement<'a> for Row<'a> {
     fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a>>) {
         self.children.extend(elements);
+    }
+}
+
+impl<'a> StyledElement for Row<'a> {
+    type Specific = RowStyle;
+
+    fn style_mut(&mut self) -> &mut Style<Self::Specific> {
+        &mut self.style
     }
 }
 

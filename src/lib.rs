@@ -3,7 +3,7 @@
 
 mod element;
 mod layout;
-mod style;
+pub mod style;
 
 extern crate alloc;
 
@@ -54,15 +54,15 @@ where
     {
         let root = view.render(&mut self.cx).into_element();
 
-        let mut tree = FrameTree::new();
         let viewport = Constraints::exact(self.display.size());
-        let root = tree.resolve(root, viewport);
+
+        // Resolve the root node and build the tree.
+        let mut tree = FrameTree::new();
+        let _ = tree.resolve(root, viewport);
 
         self.display.clear(self.background)?;
 
-        tree.paint(root, Point::zero(), &mut self.display);
-
-        Ok(())
+        tree.draw(&mut self.display)
     }
 
     /// Returns a reference to the display.
@@ -119,12 +119,40 @@ impl<'a> FrameTree<'a> {
         root
     }
 
-    /// Pains the frame tree onto the given display, starting with `root` at `offset`.
-    pub(crate) fn paint<D>(&mut self, root: NodeIndex, offset: Point, display: &mut D)
+    /// Draws the frame tree onto the given display, starting with `root` at `offset`.
+    pub(crate) fn draw<D>(&mut self, display: &mut D) -> Result<(), D::Error>
     where
-        D: DrawTarget,
+        D: DrawTarget<Color = Rgb565>,
     {
-        todo!("paint")
+        let Some(root) = self.root else {
+            return Ok(());
+        };
+
+        self.draw_node(root, Point::zero(), display)
+    }
+
+    fn draw_node<D>(
+        &mut self,
+        index: NodeIndex,
+        parent_origin: Point,
+        display: &mut D,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Rgb565>,
+    {
+        let node = &mut self.nodes[index];
+        let layout = node.layout.resolve(parent_origin);
+
+        node.element.draw(&layout, display)?;
+
+        let mut child = node.child;
+
+        while let Some(index) = child {
+            self.draw_node(index, layout.content.top_left, display)?;
+            child = self.nodes[index].sibling;
+        }
+
+        Ok(())
     }
 
     // TODO: Clean up
@@ -140,6 +168,7 @@ impl<'a> FrameTree<'a> {
         // borrow of `self.nodes[index]` while layout_row mutates children.
         enum ContentLayout {
             Row,
+            // A leaf with an inherent size.
             Leaf(Size),
         }
 

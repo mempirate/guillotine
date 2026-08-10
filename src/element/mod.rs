@@ -5,11 +5,12 @@ mod text;
 
 use alloc::vec::Vec;
 use core::convert::Infallible;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
 
 pub use row::*;
 pub use text::*;
 
-use crate::style::BoxStyle;
+use crate::{layout::BoxLayout, style::BoxStyle};
 
 /// A value that can be converted into Guillotine's closed element enum.
 pub trait IntoElement {
@@ -38,14 +39,16 @@ pub enum Element<'a, CE = Infallible> {
 impl<'a> Element<'a> {
     /// Returns the optional key of this element. The key is used to identify the element during
     /// reconciliation and building a new frame, allowing for incremental redrawing.
-    const fn key(&self) -> Option<ElementKey> {
+    #[allow(unused)]
+    pub(crate) const fn key(&self) -> Option<ElementKey> {
         // None for now. No incremental redrawing yet.
         // TODO: Add incremental redrawing support
         None
     }
 
     /// Returns the optional children of this element.
-    pub fn children(&self) -> Option<&[Element<'a>]> {
+    #[allow(unused)]
+    pub(crate) fn children(&self) -> Option<&[Element<'a>]> {
         match self {
             Element::Row(row) => Some(&row.children),
             _ => None,
@@ -53,7 +56,7 @@ impl<'a> Element<'a> {
     }
 
     /// Takes this element's children, setting them to null.
-    pub fn take_children(&mut self) -> Option<Vec<Element<'a>>> {
+    pub(crate) fn take_children(&mut self) -> Option<Vec<Element<'a>>> {
         match self {
             Element::Row(row) => Some(core::mem::take(&mut row.children)),
             _ => None,
@@ -61,11 +64,22 @@ impl<'a> Element<'a> {
     }
 
     /// Returns the box style of this element.
-    pub fn box_style(&self) -> BoxStyle {
+    pub(crate) fn box_style(&self) -> BoxStyle {
         match self {
             Element::Row(row) => row.style().box_style(),
             Element::Text(text) => text.style().box_style(),
             Element::Custom(never) => match *never {},
+        }
+    }
+
+    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Rgb565>,
+    {
+        match self {
+            Element::Row(row) => row.draw(layout, target),
+            Element::Text(text) => text.draw(layout, target),
+            Element::Custom(_) => unimplemented!("custom elements are not implemented"),
         }
     }
 }
@@ -108,7 +122,7 @@ pub trait ParentElement<'a> {
 
 /// User-provided, persistent element keys for cross-frame tracking.
 #[derive(PartialEq, Eq)]
-enum ElementKey {
+pub(crate) enum ElementKey {
     /// A numeric ID.
     Number(usize),
     /// A static string ID.

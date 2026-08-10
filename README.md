@@ -98,20 +98,24 @@ fn main() {
 - [x] Low-level `Element` / `ParentElement` trait for custom elements and widgets
 - [ ] Support generic `Color`
 - [ ] Full immediate mode redrawing
+  - [ ] Clipping / overflow behaviour
 - [ ] Make repo ready for publishing:
-  - [ ] README documentation
+  - [ ] README documentation (a la Dioxus)
   - [ ] Rustdoc documentation
   - [ ] Examples
+    - Sizing (insets)
+    - Fonts
+    - Cool
   - [ ] prelude for exporting
   - [ ] Dual Apache / MIT license
   - [ ] Fix sdl2 vendoring for embedded-graphics-simulator
 - [ ] Benchmarks for Frame building
 - [ ] `defmt` feature
 - [ ] Profiling feature that prints render times with `defmt`
-- [ ] TextStyle fonts
+- [x] TextStyle fonts
 - [ ] Support for non-interactive elements:
   - [x] Row
-  - [ ] Text
+  - [x] Text
   - [ ] Column
   - [ ] Spinner
 
@@ -137,3 +141,8 @@ enum DrawState {
 - [ ] Support interactive elements:
   - [ ] Button
   - [ ] Slider
+
+## Prior Work & Inspiration
+- [Clay by Nic Barker](https://github.com/nicbarker/clay#retained-mode-rendering)
+- [Kolibri by Yandrik](https://github.com/Yandrik/kolibri)
+- [GPUI by Zed](https://github.com/zed-industries/zed/tree/main/crates/gpui)

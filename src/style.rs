@@ -1,13 +1,18 @@
+//! Styling utilities.
 use embedded_graphics::{pixelcolor::Rgb565, prelude::Size};
 
 use crate::Constraints;
 
-/// Type for top, left, bottom and right values.
+/// Type for top, left, bottom and right insets in pixels.
 #[derive(Clone, Copy)]
 pub struct Insets {
+    /// Top inset.
     pub top: u32,
+    /// Left inset.
     pub left: u32,
+    /// Bottom inset.
     pub bottom: u32,
+    /// Right inset.
     pub right: u32,
 }
 
@@ -82,7 +87,7 @@ impl Insets {
     }
 }
 
-pub struct BoxStyle {
+pub(crate) struct BoxStyle {
     pub margin: u32,
     pub border: u32,
     pub padding: u32,
@@ -122,23 +127,51 @@ impl BoxStyle {
 }
 
 /// Common style type shared between all [`Element`] variants.
+///
+/// # Box model
+///
+/// ```text
+/// ┌─────────────────────────────────────────┐
+/// │                 margin                  │
+/// │  ┌───────────────────────────────────┐  │
+/// │  │              border               │  │
+/// │  │  ┌─────────────────────────────┐  │  │
+/// │  │  │           padding           │  │  │
+/// │  │  │  ┌───────────────────────┐  │  │  │
+/// │  │  │  │        content        │  │  │  │
+/// │  │  │  └───────────────────────┘  │  │  │
+/// │  │  └─────────────────────────────┘  │  │
+/// │  └───────────────────────────────────┘  │
+/// └─────────────────────────────────────────┘
+/// ```
+///
+/// Each inset currently applies uniformly to all four sides. [`Self::size`] sets the size of the
+/// border box; when it is not set, the border box is derived from the content size plus padding and
+/// border widths. The margin is then added outside the border box to produce the element's outer
+/// size.
 #[derive(Default, PartialEq, Eq)]
 pub struct Style<S: Default, C = Rgb565> {
     // Common properties (including Box-model properties).
     // TODO: Replace with `Insets`
+    /// Margin inset (space outside the border).
     pub margin: u32,
+    /// Padding inset (space inside the border).
     pub padding: u32,
+    /// Border width inset.
     pub border: u32,
+    /// Border color.
     pub border_color: Option<C>,
+    /// Background color inside the border.
     pub background: Option<C>,
+    /// Size of the border box.
     pub size: Option<Size>,
-    // Specific style properties for each node kind.
+    /// Specific style properties for each element kind.
     pub specific: S,
 }
 
 impl<S: Default, C> Style<S, C> {
     /// Derive a [`BoxStyle`] for layout.
-    pub fn box_style(&self) -> BoxStyle {
+    pub(crate) fn box_style(&self) -> BoxStyle {
         BoxStyle {
             margin: self.margin,
             padding: self.padding,
@@ -159,5 +192,44 @@ impl<S: Default, C> core::ops::Deref for Style<S, C> {
 impl<S: Default, C> core::ops::DerefMut for Style<S, C> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.specific
+    }
+}
+
+/// A blanket trait for elements that can be styled. Import [`StyledElement`] to use.
+pub trait StyledElement: Sized {
+    /// The specific style type for this element.
+    type Specific: Default;
+
+    /// Returns a mutable reference to the element's specific style.
+    fn style_mut(&mut self) -> &mut Style<Self::Specific>;
+
+    /// Sets the padding of the element.
+    fn padding(mut self, padding: u32) -> Self {
+        self.style_mut().padding = padding;
+        self
+    }
+
+    /// Sets the margin of the element.
+    fn margin(mut self, margin: u32) -> Self {
+        self.style_mut().margin = margin;
+        self
+    }
+
+    /// Sets the background color of the element.
+    fn background(mut self, color: Rgb565) -> Self {
+        self.style_mut().background = Some(color);
+        self
+    }
+
+    /// Sets the border width of the element.
+    fn border(mut self, border: u32) -> Self {
+        self.style_mut().border = border;
+        self
+    }
+
+    /// Sets the border color of the element.
+    fn border_color(mut self, color: Rgb565) -> Self {
+        self.style_mut().border_color = Some(color);
+        self
     }
 }

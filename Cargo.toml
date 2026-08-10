@@ -3,8 +3,15 @@ name = "guillotine"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Enables defmt logging.
+defmt = ["dep:defmt"]
+# Enables simple profile logs using defmt.
+profile = ["defmt"]
+
 [dependencies]
 embedded-graphics = "0.8.2"
+defmt = { version = "1.1", optional = true }
 
 [dev-dependencies]
 embedded-graphics-simulator = "0.8.0"
