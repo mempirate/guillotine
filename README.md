@@ -95,6 +95,40 @@ Element trees use the display's `PixelColor` type throughout. `Rgb565` views kee
 above; other targets select their color once at the `Render<Color>` boundary, after which element
 constructors and style methods infer it. See the [binary-color example](examples/binary.rs).
 
+### Insets and the box model
+
+Margin, padding, and border widths accept CSS-like physical-edge shorthands:
+
+```rs
+column()
+    .margin(10)                 // all edges
+    .padding((4, 8))            // vertical, horizontal
+    .border((1, 2, 3))          // top, horizontal, bottom
+    .margin((4, 8, 12, 16));    // top, right, bottom, left
+```
+
+Use `Insets::new(top, right, bottom, left)` when a named value is clearer. Insets are non-negative
+pixel lengths. Guillotine doesn't currently support percentages, `auto`, logical edges, negative
+margins, margin collapsing, per-edge border colors, or border styles. Adjacent margins in rows and
+columns add together.
+
+`Style::size` is the border-box size: padding and border are placed inside it, and margin is added
+outside it. The box grows to contain its padding and border when parent constraints allow.
+
+### Examples
+
+Run the Shelly-inspired power monitor in the simulator:
+
+```sh
+cargo run --example power_monitor
+```
+
+Pass a PNG path instead to render a screenshot without opening a window:
+
+```sh
+cargo run --example power_monitor -- power-monitor.png
+```
+
 ## Roadmap
 
 ### v0.0.1
@@ -122,6 +156,7 @@ constructors and style methods infer it. See the [binary-color example](examples
   - [x] Text
   - [ ] Column
   - [ ] Spinner
+- [ ] Container gaps
 
 ### v0.1.0
 - [ ] Custom render modes: `Incremental` (only repaint changed regions, requires more memory), 
@@ -137,7 +172,9 @@ enum DrawState {
     Full,      // theme, rotation, display reset, etc.
 }
 ```
-- [ ] Dialogs & modals
+- [ ] New elements
+  - [ ] Dialogs / Modals (floating containers)
+  - [ ] Charts
 - [ ] No alloc
 - [ ] Custom elements
 - [ ] Alignment

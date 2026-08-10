@@ -27,11 +27,8 @@ impl Constraints {
         Self { min: size, max: size }
     }
 
-    pub(crate) fn deflate(self, by: u32) -> Self {
-        Self {
-            min: self.min.saturating_sub(Size::new_equal(by)),
-            max: self.max.saturating_sub(Size::new_equal(by)),
-        }
+    pub(crate) const fn deflate(self, by: Size) -> Self {
+        Self { min: self.min.saturating_sub(by), max: self.max.saturating_sub(by) }
     }
 }
 

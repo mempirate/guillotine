@@ -286,36 +286,38 @@ where
             ContentLayout::Leaf(size) => size,
         };
 
-        let content_inset = box_style.content_inset();
+        let content_insets = box_style.content_insets();
+        let content_inset_size = content_insets.total_size();
         let border_size = {
             // The "natural" border size, i.e. derived from its children.
-            let border_size = intrinsic_content_size.inflate(content_inset.saturating_mul(2));
+            let natural_border_size = intrinsic_content_size.inflate(content_inset_size);
 
-            // Adopt the configured border size if set.
-            let border_size = box_style.size.unwrap_or(border_size);
+            // A configured size describes the border box, but it grows to fit border and padding
+            // when the parent constraints allow it.
+            let desired_border_size = box_style.size.map_or(natural_border_size, |size| {
+                Size::new(
+                    size.width.max(content_inset_size.width),
+                    size.height.max(content_inset_size.height),
+                )
+            });
 
-            border_constraints.constrain(border_size)
+            border_constraints.constrain(desired_border_size)
         };
 
-        let outer_size = border_size.inflate(box_style.margin.saturating_mul(2));
+        let outer_size = border_size.inflate(box_style.margin.total_size());
 
-        let content_size = border_size.deflate(content_inset.saturating_mul(2));
+        let content_size = border_size.deflate(content_inset_size);
 
-        let margin_offset = i32::try_from(box_style.margin).unwrap_or(i32::MAX);
-
-        let content_offset =
-            box_style.margin.saturating_add(box_style.border).saturating_add(box_style.padding);
-
-        let content_offset = i32::try_from(content_offset).unwrap_or(i32::MAX);
+        let content_offset = box_style.margin.saturating_add(content_insets);
 
         self.nodes[index].layout = Layout {
             // The parent assigns this later. The root remains at zero.
             offset: Point::new(0, 0),
 
             // Both offsets are relative to the node's outer-box origin.
-            border_offset: Point::new(margin_offset, margin_offset),
+            border_offset: Point::new(to_i32(box_style.margin.left), to_i32(box_style.margin.top)),
 
-            content_offset: Point::new(content_offset, content_offset),
+            content_offset: Point::new(to_i32(content_offset.left), to_i32(content_offset.top)),
 
             outer_size,
             border_size,
@@ -371,21 +373,25 @@ where
 }
 
 trait SizeExt {
-    /// Uniformly inflates the size with `by`.
-    fn inflate(self, by: u32) -> Self;
+    /// Inflates the size by a horizontal and vertical amount.
+    fn inflate(self, by: Size) -> Self;
 
-    /// Uniformly deflates the size with `by`.
-    fn deflate(self, by: u32) -> Self;
+    /// Deflates the size by a horizontal and vertical amount.
+    fn deflate(self, by: Size) -> Self;
 }
 
 impl SizeExt for Size {
-    fn inflate(self, by: u32) -> Self {
-        Size::new(self.width.saturating_add(by), self.height.saturating_add(by))
+    fn inflate(self, by: Size) -> Self {
+        Self::new(self.width.saturating_add(by.width), self.height.saturating_add(by.height))
     }
 
-    fn deflate(self, by: u32) -> Self {
-        self.saturating_sub(Size::new_equal(by))
+    fn deflate(self, by: Size) -> Self {
+        self.saturating_sub(by)
     }
+}
+
+const fn to_i32(value: u32) -> i32 {
+    if value > i32::MAX as u32 { i32::MAX } else { value as i32 }
 }
 
 /// Recursively populates the frame tree with the given element and parent node.
@@ -524,7 +530,7 @@ pub struct Context {}
 mod tests {
     use embedded_graphics::{
         mock_display::MockDisplay,
-        pixelcolor::Rgb565,
+        pixelcolor::{BinaryColor, Rgb565},
         prelude::{Point, RgbColor as _, Size},
         primitives::Rectangle,
     };
@@ -617,7 +623,7 @@ mod tests {
     #[test]
     fn column_draws_its_styled_border_box() {
         let column = column().with_style(Style {
-            border: 1,
+            border: 1.into(),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
             ..Style::default()
@@ -627,11 +633,133 @@ mod tests {
             content: Rectangle::new(Point::new(2, 2), Size::new(2, 2)),
         };
         let mut display = MockDisplay::new();
+        display.set_allow_overdraw(true);
 
         column.draw(&layout, &mut display).unwrap();
 
         assert_eq!(display.get_pixel(Point::new(1, 1)), Some(Rgb565::BLUE));
         assert_eq!(display.get_pixel(Point::new(2, 2)), Some(Rgb565::RED));
         assert_eq!(display.get_pixel(Point::zero()), None);
+    }
+
+    #[test]
+    fn asymmetric_insets_drive_size_and_offsets() {
+        let element: Element<'_> = text("")
+            .with_style(Style {
+                margin: Insets::new(1, 2, 3, 4),
+                border: Insets::new(1, 2, 3, 4),
+                padding: Insets::new(5, 6, 7, 8),
+                size: Some(Size::new(30, 25)),
+                ..Style::default()
+            })
+            .into_element();
+
+        let mut tree = FrameTree::new();
+        let root = tree.resolve(element, Constraints::exact(Size::new(100, 100)).loosen());
+        let layout = &tree.nodes[root].layout;
+
+        assert_eq!(layout.border_size, Size::new(30, 25));
+        assert_eq!(layout.outer_size, Size::new(36, 29));
+        assert_eq!(layout.content_size, Size::new(10, 9));
+        assert_eq!(layout.border_offset, Point::new(4, 1));
+        assert_eq!(layout.content_offset, Point::new(16, 7));
+    }
+
+    #[test]
+    fn adjacent_margins_add_in_rows() {
+        fn box_with_margin(margin: Insets) -> Text<'static> {
+            text("").with_style(Style { margin, size: Some(Size::new(10, 10)), ..Style::default() })
+        }
+
+        let element = row()
+            .child(box_with_margin(Insets::new(0, 2, 0, 0)))
+            .child(box_with_margin(Insets::new(0, 0, 0, 3)))
+            .into_element();
+
+        let mut tree = FrameTree::new();
+        let root = tree.resolve(element, Constraints::exact(Size::new(100, 100)).loosen());
+        let first = tree.nodes[root].child.expect("row should have children");
+        let second = tree.nodes[first].sibling.expect("row should have two children");
+
+        assert_eq!(tree.nodes[first].layout.outer_size, Size::new(12, 10));
+        assert_eq!(tree.nodes[second].layout.offset, Point::new(12, 0));
+
+        let first_box = tree.nodes[first].layout.resolve(Point::zero()).border;
+        let second_box = tree.nodes[second].layout.resolve(Point::zero()).border;
+        assert_eq!(first_box.top_left.x + 10, 10);
+        assert_eq!(second_box.top_left.x, 15);
+    }
+
+    #[test]
+    fn explicit_size_grows_for_insets_but_hard_constraints_win() {
+        fn inset_box() -> Element<'static> {
+            text("")
+                .with_style(Style {
+                    padding: 4.into(),
+                    border: 2.into(),
+                    size: Some(Size::new(5, 5)),
+                    ..Style::default()
+                })
+                .into_element()
+        }
+
+        let mut loose_tree = FrameTree::new();
+        let loose =
+            loose_tree.resolve(inset_box(), Constraints::exact(Size::new(100, 100)).loosen());
+        assert_eq!(loose_tree.nodes[loose].layout.border_size, Size::new(12, 12));
+        assert_eq!(loose_tree.nodes[loose].layout.content_size, Size::zero());
+
+        let mut constrained_tree = FrameTree::new();
+        let constrained =
+            constrained_tree.resolve(inset_box(), Constraints::exact(Size::new(8, 8)));
+        assert_eq!(constrained_tree.nodes[constrained].layout.border_size, Size::new(8, 8));
+        assert_eq!(constrained_tree.nodes[constrained].layout.content_size, Size::zero());
+    }
+
+    #[test]
+    fn asymmetric_borders_are_painted_inside_the_border_box() {
+        let column = column().with_style(Style {
+            border: Insets::new(1, 2, 3, 4),
+            border_color: Some(Rgb565::BLUE),
+            background: Some(Rgb565::RED),
+            ..Style::default()
+        });
+        let layout = layout::BoxLayout {
+            border: Rectangle::new(Point::new(1, 1), Size::new(7, 7)),
+            content: Rectangle::new(Point::new(5, 2), Size::new(1, 3)),
+        };
+        let mut display = MockDisplay::new();
+        display.set_allow_overdraw(true);
+
+        column.draw(&layout, &mut display).unwrap();
+
+        assert_eq!(display.get_pixel(Point::new(5, 1)), Some(Rgb565::BLUE));
+        assert_eq!(display.get_pixel(Point::new(6, 3)), Some(Rgb565::BLUE));
+        assert_eq!(display.get_pixel(Point::new(5, 5)), Some(Rgb565::BLUE));
+        assert_eq!(display.get_pixel(Point::new(4, 3)), Some(Rgb565::BLUE));
+        assert_eq!(display.get_pixel(Point::new(5, 3)), Some(Rgb565::RED));
+        assert_eq!(display.get_pixel(Point::zero()), None);
+        assert_eq!(display.get_pixel(Point::new(8, 3)), None);
+    }
+
+    #[test]
+    fn box_painting_supports_binary_color() {
+        let column: Column<'_, BinaryColor> = column().with_style(Style {
+            border: (1, 2, 1, 2).into(),
+            border_color: Some(BinaryColor::On),
+            background: Some(BinaryColor::Off),
+            ..Style::default()
+        });
+        let layout = layout::BoxLayout {
+            border: Rectangle::new(Point::zero(), Size::new(6, 4)),
+            content: Rectangle::new(Point::new(2, 1), Size::new(2, 2)),
+        };
+        let mut display = MockDisplay::new();
+        display.set_allow_overdraw(true);
+
+        column.draw(&layout, &mut display).unwrap();
+
+        assert_eq!(display.get_pixel(Point::zero()), Some(BinaryColor::On));
+        assert_eq!(display.get_pixel(Point::new(3, 2)), Some(BinaryColor::Off));
     }
 }

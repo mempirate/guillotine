@@ -9,8 +9,8 @@ use core::convert::Infallible;
 use embedded_graphics::{
     Drawable as _,
     pixelcolor::Rgb565,
-    prelude::{DrawTarget, PixelColor, Primitive as _},
-    primitives::PrimitiveStyleBuilder,
+    prelude::{DrawTarget, PixelColor, Point, Primitive as _, Size},
+    primitives::{PrimitiveStyle, Rectangle},
 };
 
 pub use column::*;
@@ -119,17 +119,67 @@ where
     C: PixelColor,
     D: DrawTarget<Color = C>,
 {
-    let mut primitive_style = PrimitiveStyleBuilder::new().stroke_width(style.border);
-
-    if let Some(color) = style.border_color {
-        primitive_style = primitive_style.stroke_color(color);
-    }
-
     if let Some(color) = style.background {
-        primitive_style = primitive_style.fill_color(color);
+        draw_filled_rectangle(layout.border, color, target)?;
     }
 
-    layout.border.into_styled(primitive_style.build()).draw(target)
+    let Some(color) = style.border_color else {
+        return Ok(());
+    };
+
+    let origin = layout.border.top_left;
+    let size = layout.border.size;
+    let top = style.border.top.min(size.height);
+    let right = style.border.right.min(size.width);
+    let bottom = style.border.bottom.min(size.height);
+    let left = style.border.left.min(size.width);
+
+    // Border bands are painted inside the border box. Opposing bands may overlap when the box is
+    // smaller than its border widths; all edges share one color, so overlap order is immaterial.
+    draw_filled_rectangle(Rectangle::new(origin, Size::new(size.width, top)), color, target)?;
+    draw_filled_rectangle(
+        Rectangle::new(
+            Point::new(
+                saturating_coordinate_add(origin.x, size.width.saturating_sub(right)),
+                origin.y,
+            ),
+            Size::new(right, size.height),
+        ),
+        color,
+        target,
+    )?;
+    draw_filled_rectangle(
+        Rectangle::new(
+            Point::new(
+                origin.x,
+                saturating_coordinate_add(origin.y, size.height.saturating_sub(bottom)),
+            ),
+            Size::new(size.width, bottom),
+        ),
+        color,
+        target,
+    )?;
+    draw_filled_rectangle(Rectangle::new(origin, Size::new(left, size.height)), color, target)
+}
+
+fn draw_filled_rectangle<C, D>(
+    rectangle: Rectangle,
+    color: C,
+    target: &mut D,
+) -> Result<(), D::Error>
+where
+    C: PixelColor,
+    D: DrawTarget<Color = C>,
+{
+    if rectangle.size.width == 0 || rectangle.size.height == 0 {
+        return Ok(());
+    }
+
+    rectangle.into_styled(PrimitiveStyle::with_fill(color)).draw(target)
+}
+
+const fn saturating_coordinate_add(coordinate: i32, offset: u32) -> i32 {
+    coordinate.saturating_add(if offset > i32::MAX as u32 { i32::MAX } else { offset as i32 })
 }
 
 impl<'a, C> IntoElement for Element<'a, C>
