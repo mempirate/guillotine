@@ -11,7 +11,11 @@ Works everywhere `embedded-graphics` works.
 
 ## Demo
 
-A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board:
+A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board from the [`shellyctl`](https://github.com/mempirate/shellyctl) project:
+
+![Demo of a power consumption monitor UI](img/demo.jpeg)
+
+## Quickstart
 
 ```rust,no_run
 use embedded_graphics::{
