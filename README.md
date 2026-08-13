@@ -7,6 +7,34 @@ Works everywhere `embedded-graphics` works.
 ## Quickstart
 
 ```rust
+use guillotine::*; 
+
+struct BasicView {}
+
+impl Render for BasicView {
+    // Render lets you declaratively build your UI tree.
+    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
+        column()
+            .padding(10)
+            .margin(10)
+            .border(2)
+            .border_color(Rgb565::BLUE)
+            .child(text("Hello, World!").background(Rgb565::RED).margin(5))
+            .child(text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
+    }
+}
+
+fn main() {
+    // Display should implement embedded_graphics DrawTarget
+    let display = ....;
+
+    let view = BasicView {};
+
+    let mut ui = Ui::new(display);
+
+    // Render the view
+    ui.render(&view);
+}
 
 ```
 
@@ -184,6 +212,15 @@ enum DrawState {
 - [ ] Support interactive elements:
   - [ ] Button
   - [ ] Slider
+
+## Why?
+
+I was trying to build a clean-looking dashboard on a small LCD screen powered by an ESP32-C6, that's supposed to monitor and display the power consumption of my home lab (project [here](https://github.com/mempirate/shellyctl)). I wanted to do this in Rust, with the esp-rs ecosystem. The ecosystem is quite mature, but I couldn't really find a UI framework that was:
+1. Performant
+2. Very low memory footprint (no Slint / LVGL)
+3. Beautiful
+
+Additionally, I wanted to learn what it would take to build something like this.
 
 ## Prior Work & Inspiration
 - [Clay by Nic Barker](https://github.com/nicbarker/clay#retained-mode-rendering)

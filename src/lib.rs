@@ -123,7 +123,7 @@ enum Axis {
 
 /// Operations, single pass:
 /// - Recursively walk the element tree to build the frame tree. For each element, calculate hard
-///   constraints (inner_constraints) and push them down to the children.
+///   constraints (`inner_constraints`) and push them down to the children.
 /// - Once the leafs are resolved, push sizes back up the tree. For container elements, also
 ///   calculate relative offsets for each child.
 struct FrameTree<'a, C>
