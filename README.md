@@ -1,10 +1,17 @@
 # Guillotine
 
+[![CI](https://github.com/mempirate/guillotine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mempirate/guillotine/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/guillotine.svg)](https://crates.io/crates/guillotine)
+[![Docs.rs](https://docs.rs/guillotine/badge.svg)](https://docs.rs/guillotine)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/mempirate/guillotine)
+
 A `no-std` graphical user interface framework for embedded devices prioritizing resource efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
 
 Works everywhere `embedded-graphics` works.
 
-## Quickstart
+## Demo
+
+A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board:
 
 ```rust,no_run
 use embedded_graphics::{
@@ -16,7 +23,9 @@ use embedded_graphics::{
 
 use guillotine::*; 
 
-struct BasicView {}
+struct BasicView {
+    greeting: &'static str,
+}
 
 impl Render for BasicView {
     // Render lets you declaratively build your UI tree.
@@ -26,7 +35,7 @@ impl Render for BasicView {
             .margin(10)
             .border(2)
             .border_color(Rgb565::BLUE)
-            .child(text("Hello, World!").background(Rgb565::RED).margin(5))
+            .child(text(self.greeting).background(Rgb565::RED).margin(5))
             .child(text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
     }
 }
@@ -35,7 +44,9 @@ fn main() {
     // Display should implement embedded_graphics DrawTarget
     let display = MockDisplay::new();
 
-    let view = BasicView {};
+    let view = BasicView {
+        greeting: "Hello world!"
+    };
 
     let mut ui = Ui::new(display);
 
@@ -44,9 +55,6 @@ fn main() {
 }
 
 ```
-
-## Status
-In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
 
 ## Core Concepts
 
@@ -64,16 +72,6 @@ In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
 - Conceptually similar to Flutter (i.e. constraints go down, sizes go up)
   - constraints flow downward, sizes flow upward, positions flow downward
 - Requirement: single pass.
-
-## Features
-- [x] Declarative, interactive UI building blocks
-- [x] Statefulness
-- [ ] Custom components & widgets (with custom style)
-- [ ] Modals / floating windows
-- [ ] Alignments (center, right, bottom, etc)
-- [x] Basic foreground/background color themes
-- [ ] Support for interaction (touch, hover, click)
-
 
 ## API
 

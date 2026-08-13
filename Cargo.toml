@@ -2,12 +2,16 @@
 name = "guillotine"
 version = "0.0.1"
 edition = "2024"
-description = """
-A no_std graphical user interface framework in Rust for embedded devices prioritizing resource efficiency and ergonomics.
-"""
+description = "A no_std graphical user interface framework in Rust for embedded devices prioritizing resource efficiency and ergonomics."
 repository = "https://github.com/mempirate/guillotine"
+documentation = "https://docs.rs/guillotine"
+categories = ["embedded", "no-std"]
+keywords = ["embedded", "gui", "graphics", "esp32", "no_std", "embedded-graphics"]
 readme = "README.md"
-license = "MIT"
+license = "MIT OR Apache-2.0"
+exclude = ["/.github", "/rust-toolchain.toml", "/rustfmt.toml"]
+rust-version = "1.87"
+publish = ["crates-io"]
 
 [features]
 default = []
