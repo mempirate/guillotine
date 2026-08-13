@@ -1,2 +1,2 @@
 [env]
-LIBRARY_PATH = { value = "/opt/homebrew/lib", force = true }
+CMAKE_POLICY_VERSION_MINIMUM = { value = "3.5", force = false }

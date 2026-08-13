@@ -2,7 +2,7 @@
 
 A `no-std` graphical user interface framework for embedded devices prioritizing resource efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
 
-Works everywhere `mipidsi` and `embedded-graphics` work. 
+Works everywhere `embedded-graphics` works.
 
 ## Status
 In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
@@ -36,7 +36,7 @@ In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
 
 ## API
 
-```rs
+```rust
 use guillotine::prelude::*;
 
 struct Home {
@@ -99,7 +99,7 @@ constructors and style methods infer it. See the [binary-color example](examples
 
 Margin, padding, and border widths accept CSS-like physical-edge shorthands:
 
-```rs
+```rust
 column()
     .margin(10)                 // all edges
     .padding((4, 8))            // vertical, horizontal
@@ -117,16 +117,10 @@ outside it. The box grows to contain its padding and border when parent constrai
 
 ### Examples
 
-Run the Shelly-inspired power monitor in the simulator:
+To run the examples, you need to enable the `simulator` feature. This pulls in a bundled [sdl2](https://github.com/Rust-SDL2/rust-sdl2) for opening windows. You will need cmake to compile it.
 
 ```sh
-cargo run --example power_monitor
-```
-
-Pass a PNG path instead to render a screenshot without opening a window:
-
-```sh
-cargo run --example power_monitor -- power-monitor.png
+cargo run --example power_monitor --features simulator
 ```
 
 ## Roadmap
@@ -135,8 +129,7 @@ cargo run --example power_monitor -- power-monitor.png
 - [x] Try to mimic GPUI declaration style: https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/hello_world.rs
 - [x] Low-level `Element` / `ParentElement` trait for custom elements and widgets
 - [x] Support generic `PixelColor`
-- [ ] Full immediate mode redrawing
-  - [ ] Clipping / overflow behaviour
+- [x] Full immediate mode redrawing
 - [ ] Make repo ready for publishing:
   - [ ] README documentation (a la Dioxus)
   - [ ] Rustdoc documentation
@@ -144,17 +137,16 @@ cargo run --example power_monitor -- power-monitor.png
     - Sizing (insets)
     - Fonts
     - Cool
-  - [ ] prelude for exporting
+    - ESP32
+  - [x] Fix exports
   - [ ] Dual Apache / MIT license
-  - [ ] Fix sdl2 vendoring for embedded-graphics-simulator
+  - [x] Fix sdl2 vendoring for embedded-graphics-simulator
 - [ ] Benchmarks for Frame building
-- [ ] `defmt` feature
-- [ ] Profiling feature that prints render times with `defmt`
 - [x] TextStyle fonts
 - [ ] Support for non-interactive elements:
   - [x] Row
-  - [x] Text
-  - [ ] Column
+  - [x] (formatted) Text
+  - [x] Column
   - [ ] Spinner
 - [ ] Container gaps
 
@@ -175,6 +167,10 @@ enum DrawState {
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
+- [ ] Overflow behaviour:
+  - [x] Visible
+  - [ ] Clip
+- [ ] `profile` feature with `defmt` logs
 - [ ] No alloc
 - [ ] Custom elements
 - [ ] Alignment

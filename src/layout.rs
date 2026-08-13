@@ -10,6 +10,16 @@ pub(crate) struct Constraints {
 }
 
 impl Constraints {
+    /// Returns [`Constraints`] that is exact in both dimensions.
+    pub(crate) fn exact(size: Size) -> Self {
+        Self { min: size, max: size }
+    }
+
+    /// Returns [`Constraints`] with zero minimum size and the given maximum size.
+    pub(crate) fn max(size: Size) -> Self {
+        Self { min: Size::zero(), max: size }
+    }
+
     pub(crate) fn constrain(self, desired: Size) -> Size {
         Size::new(
             desired.width.clamp(self.min.width, self.max.width),
@@ -20,11 +30,6 @@ impl Constraints {
     /// Returns [`Constraints`] with zero minimum size and the same maximum size as the original.
     pub(crate) fn loosen(self) -> Self {
         Self { min: Size::zero(), max: self.max }
-    }
-
-    /// Returns [`Constraints`] that is exact in both dimensions.
-    pub(crate) fn exact(size: Size) -> Self {
-        Self { min: size, max: size }
     }
 
     pub(crate) const fn deflate(self, by: Size) -> Self {

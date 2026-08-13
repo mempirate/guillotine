@@ -1,81 +1,28 @@
 //! # Guillotine
 #![no_std]
+#![doc = include_str!("../README.md")]
 
 mod element;
 mod layout;
 pub mod style;
+mod theme;
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 use embedded_graphics::{
-    pixelcolor::{
-        Bgr555, Bgr565, Bgr666, Bgr888, BinaryColor, Gray2, Gray4, Gray8, Rgb555, Rgb565, Rgb666,
-        Rgb888,
-    },
-    prelude::{DrawTarget, GrayColor, OriginDimensions, PixelColor, Point, RgbColor, Size},
+    pixelcolor::Rgb565,
+    prelude::{DrawTarget, OriginDimensions, PixelColor, Point, Size},
 };
 
-pub use element::*;
-pub use style::{Insets, Style};
+pub use element::{
+    Column, ColumnStyle, Element, Font, IntoElement, ParentElement, Row, RowStyle, Text, TextStyle,
+    TextStyledElement, column, row, text,
+};
+pub use style::{Insets, Style, StyledElement};
+pub use theme::Theme;
 
 use crate::layout::{Constraints, Layout};
-
-/// Colors used by the UI when an element doesn't specify a color explicitly.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Theme<C>
-where
-    C: PixelColor,
-{
-    /// Color used to clear the display before drawing a frame.
-    pub background: C,
-    /// Default text color.
-    pub foreground: C,
-}
-
-impl<C> Theme<C>
-where
-    C: PixelColor,
-{
-    /// Creates a theme from its background and foreground colors.
-    pub const fn new(background: C, foreground: C) -> Self {
-        Self { background, foreground }
-    }
-}
-
-macro_rules! impl_rgb_theme {
-    ($($color:ty),+ $(,)?) => {
-        $(
-            impl Default for Theme<$color> {
-                fn default() -> Self {
-                    Self::new(<$color>::BLACK, <$color>::WHITE)
-                }
-            }
-        )+
-    };
-}
-
-impl_rgb_theme!(Rgb555, Bgr555, Rgb565, Bgr565, Rgb666, Bgr666, Rgb888, Bgr888);
-
-macro_rules! impl_gray_theme {
-    ($($color:ty),+ $(,)?) => {
-        $(
-            impl Default for Theme<$color> {
-                fn default() -> Self {
-                    Self::new(<$color>::BLACK, <$color>::WHITE)
-                }
-            }
-        )+
-    };
-}
-
-impl_gray_theme!(Gray2, Gray4, Gray8);
-
-impl Default for Theme<BinaryColor> {
-    fn default() -> Self {
-        Self::new(BinaryColor::Off, BinaryColor::On)
-    }
-}
 
 /// The [`Ui`] struct is the main entrypoint for the Guillotine UI framework.
 /// It manages the display and takes care of rendering the UI from a tree of [`Element`]s,
@@ -121,7 +68,8 @@ where
     {
         let root = view.render(&mut self.cx).into_element();
 
-        let viewport = Constraints::exact(self.display.size());
+        // Create the viewport constraints.
+        let viewport = Constraints::max(self.display.size());
 
         // Resolve the root node and build the tree.
         let mut tree = FrameTree::new();
