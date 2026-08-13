@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "guillotine"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
