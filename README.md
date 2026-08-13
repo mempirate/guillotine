@@ -6,7 +6,14 @@ Works everywhere `embedded-graphics` works.
 
 ## Quickstart
 
-```rust
+```rust,no_run
+use embedded_graphics::{
+    prelude::*, 
+    mock_display::MockDisplay, 
+    pixelcolor::Rgb565,
+    mono_font::ascii::FONT_9X18_BOLD,
+};
+
 use guillotine::*; 
 
 struct BasicView {}
@@ -26,7 +33,7 @@ impl Render for BasicView {
 
 fn main() {
     // Display should implement embedded_graphics DrawTarget
-    let display = ....;
+    let display = MockDisplay::new();
 
     let view = BasicView {};
 
@@ -70,8 +77,12 @@ In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
 
 ## API
 
-```rust
-use guillotine::prelude::*;
+```rust,no_run
+extern crate alloc;
+
+use embedded_graphics::{prelude::*, mock_display::MockDisplay, pixelcolor::Rgb565};
+
+use guillotine::*;
 
 struct Home {
     show_button: bool,
@@ -79,11 +90,11 @@ struct Home {
 }
 
 impl Render for Home {
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement {
+    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
         row()
-            .style(Style::default().bg(Color::Red))
-            .child(text(self.header).style(Style::default().bold()))
-            .when(self.show_button, |row| row.child(button("Click me")))
+            .bg(Rgb565::RED)
+            .child(text(self.header))
+            .when(self.show_button, |row| row.child(text("Click me")))
             .children([text("Copyright"), text("ACME Corp")])
     }
 }
@@ -95,23 +106,23 @@ struct Page {
 }
 
 impl Render for Page {
-    fn render(&self, _cx: &mut Context<'_>) -> impl IntoElement {
+    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
         column()
-            .child(text("Power: {}", self.power))
-            .child(text("Current: {}", self.current))
-            .child(text("Voltage: {}", self.voltage))
+            .child(text(alloc::format!("Power: {}", self.power)))
+            .child(text(alloc::format!("Current: {}", self.current)))
+            .child(text(alloc::format!("Voltage: {}", self.voltage)))
     }
 }
 
 fn main() {
-    let display = SimulatorDisplay::<Rgb565>::new(Size::new(320, 172));
+    let display = MockDisplay::new();
 
     let mut ui = Ui::new(display);
 
     let mut home = Home {
         show_button: false,
         header: "Some Title",
-    }
+    };
 
     ui.render(&home).unwrap();
 
@@ -119,7 +130,11 @@ fn main() {
 
     ui.render(&home).unwrap();
 
-    let mut page = Page { .. };
+    let mut page = Page { 
+        power: 50.0,
+        voltage: 230.0,
+        current: 0.2173
+    };
 
     ui.render(&page);
 }
@@ -133,7 +148,7 @@ constructors and style methods infer it. See the [binary-color example](examples
 
 Margin, padding, and border widths accept CSS-like physical-edge shorthands:
 
-```rust
+```rust,ignore
 column()
     .margin(10)                 // all edges
     .padding((4, 8))            // vertical, horizontal

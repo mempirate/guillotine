@@ -277,6 +277,12 @@ pub trait StyledElement: Sized {
         self
     }
 
+    /// Shorthand for [`Self::background`].
+    fn bg(mut self, color: Self::Color) -> Self {
+        self.style_mut().background = Some(color);
+        self
+    }
+
     /// Sets the border widths using a CSS-like one-to-four-value inset shorthand.
     fn border(mut self, border: impl Into<Insets>) -> Self {
         self.style_mut().border = border.into();

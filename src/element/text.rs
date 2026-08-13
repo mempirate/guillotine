@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use embedded_graphics::{
     Drawable as _,
     mono_font::{MonoFont, MonoTextStyle, MonoTextStyleBuilder, ascii::FONT_10X20},
@@ -32,7 +33,7 @@ pub struct Text<'a, C = Rgb565>
 where
     C: PixelColor,
 {
-    content: &'a str,
+    content: Cow<'a, str>,
     style: Style<TextStyle<C>, C>,
 }
 
@@ -41,8 +42,8 @@ where
     C: PixelColor,
 {
     /// Creates a text declaration that borrows its content for this render.
-    pub fn new(content: &'a str) -> Self {
-        Self { content, style: Style::default() }
+    pub fn new(content: impl Into<Cow<'a, str>>) -> Self {
+        Self { content: content.into(), style: Style::default() }
     }
 
     /// Sets the style of this text.
@@ -52,8 +53,8 @@ where
     }
 
     /// Returns the text content.
-    pub const fn content(&self) -> &'a str {
-        self.content
+    pub fn content(&self) -> &str {
+        self.content.as_ref()
     }
 
     /// Returns a reference to this text's style.
@@ -69,7 +70,7 @@ where
                 let character_style = MonoTextStyle::new(font, BinaryColor::On);
 
                 let bounds = GraphicsText::with_baseline(
-                    self.content,
+                    self.content.as_ref(),
                     Point::new(0, 0),
                     character_style,
                     Baseline::Top,
@@ -101,7 +102,7 @@ where
                     .build();
 
                 GraphicsText::with_baseline(
-                    self.content,
+                    self.content.as_ref(),
                     layout.content.top_left,
                     character_style,
                     Baseline::Top,
@@ -137,7 +138,7 @@ where
 }
 
 /// Creates a text declaration borrowing `content` for this render.
-pub fn text<C>(content: &str) -> Text<'_, C>
+pub fn text<'a, C>(content: impl Into<Cow<'a, str>>) -> Text<'a, C>
 where
     C: PixelColor,
 {
