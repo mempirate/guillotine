@@ -11,12 +11,12 @@ pub(crate) struct Constraints {
 
 impl Constraints {
     /// Returns [`Constraints`] that is exact in both dimensions.
-    pub(crate) fn exact(size: Size) -> Self {
+    pub(crate) const fn exact(size: Size) -> Self {
         Self { min: size, max: size }
     }
 
     /// Returns [`Constraints`] with zero minimum size and the given maximum size.
-    pub(crate) fn max(size: Size) -> Self {
+    pub(crate) const fn max(size: Size) -> Self {
         Self { min: Size::zero(), max: size }
     }
 
@@ -28,7 +28,7 @@ impl Constraints {
     }
 
     /// Returns [`Constraints`] with zero minimum size and the same maximum size as the original.
-    pub(crate) fn loosen(self) -> Self {
+    pub(crate) const fn loosen(self) -> Self {
         Self { min: Size::zero(), max: self.max }
     }
 
@@ -71,7 +71,7 @@ impl Layout {
         }
     }
 
-    pub(crate) fn set_offset(&mut self, offset: Point) {
+    pub(crate) const fn set_offset(&mut self, offset: Point) {
         self.offset = offset;
     }
 

@@ -63,7 +63,7 @@ where
 
     /// Returns the optional children of this element.
     #[allow(unused)]
-    pub(crate) fn children(&self) -> Option<&[Element<'a, C>]> {
+    pub(crate) fn children(&self) -> Option<&[Self]> {
         match self {
             Element::Column(column) => Some(&column.children),
             Element::Row(row) => Some(&row.children),
@@ -72,7 +72,7 @@ where
     }
 
     /// Takes this element's children, setting them to null.
-    pub(crate) fn take_children(&mut self) -> Option<Vec<Element<'a, C>>> {
+    pub(crate) fn take_children(&mut self) -> Option<Vec<Self>> {
         match self {
             Element::Column(column) => Some(core::mem::take(&mut column.children)),
             Element::Row(row) => Some(core::mem::take(&mut row.children)),
@@ -81,7 +81,7 @@ where
     }
 
     /// Returns the box style of this element.
-    pub(crate) fn box_style(&self) -> BoxStyle {
+    pub(crate) const fn box_style(&self) -> BoxStyle {
         match self {
             Element::Column(column) => column.style().box_style(),
             Element::Row(row) => row.style().box_style(),
@@ -186,9 +186,9 @@ impl<'a, C> IntoElement for Element<'a, C>
 where
     C: PixelColor,
 {
-    type Element = Element<'a, C>;
+    type Element = Self;
 
-    fn into_element(self) -> Element<'a, C> {
+    fn into_element(self) -> Self {
         self
     }
 }
@@ -235,12 +235,12 @@ pub(crate) enum ElementKey {
 
 impl From<usize> for ElementKey {
     fn from(value: usize) -> Self {
-        ElementKey::Number(value)
+        Self::Number(value)
     }
 }
 
 impl From<&'static str> for ElementKey {
     fn from(value: &'static str) -> Self {
-        ElementKey::String(value)
+        Self::String(value)
     }
 }

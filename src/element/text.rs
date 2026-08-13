@@ -154,7 +154,7 @@ pub enum Font {
 impl Font {
     /// Creates a [`Font::Mono`] font from the given [`MonoFont`].
     #[inline]
-    pub fn mono(font: &'static MonoFont<'static>) -> Self {
+    pub const fn mono(font: &'static MonoFont<'static>) -> Self {
         Self::Mono(font)
     }
 }

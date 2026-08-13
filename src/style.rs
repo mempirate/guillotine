@@ -118,6 +118,7 @@ impl_insets_from!(i32, |value: i32| {
     value as u32
 });
 
+/// The style of a box, including margin, border, padding, and size.
 pub(crate) struct BoxStyle {
     pub margin: Insets,
     pub border: Insets,
@@ -128,7 +129,7 @@ pub(crate) struct BoxStyle {
 impl BoxStyle {
     /// Returns the constraints for the border box by subtracting the margin from
     /// the given constraints.
-    pub(crate) fn border_constraints(&self, constraints: Constraints) -> Constraints {
+    pub(crate) const fn border_constraints(&self, constraints: Constraints) -> Constraints {
         constraints.deflate(self.margin.total_size())
     }
 
@@ -223,7 +224,7 @@ impl<S: Default, C> Default for Style<S, C> {
 
 impl<S: Default, C> Style<S, C> {
     /// Derive a [`BoxStyle`] for layout.
-    pub(crate) fn box_style(&self) -> BoxStyle {
+    pub(crate) const fn box_style(&self) -> BoxStyle {
         BoxStyle {
             margin: self.margin,
             padding: self.padding,

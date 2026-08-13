@@ -7,7 +7,7 @@ use embedded_graphics::{
     prelude::{RgbColor as _, Size},
 };
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, Window};
-use guillotine::{style::StyledElement as _, *};
+use guillotine::*;
 
 struct BasicView {}
 

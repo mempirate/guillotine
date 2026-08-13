@@ -34,11 +34,6 @@ rust.unused_must_use = "deny"
 rustdoc.all = "warn"
 
 [lints.clippy]
-# These are some of clippy's nursery (i.e., experimental) lints that we like.
-# By default, nursery lints are allowed. Some of the lints below have made good
-# suggestions which we fixed. The others didn't have any findings, so we can
-# assume they don't have that many false positives. Let's enable them to
-# prevent future problems.
 borrow_as_ptr = "warn"
 branches_sharing_code = "warn"
 clear_with_drain = "warn"
@@ -93,7 +88,6 @@ transmute_undefined_repr = "warn"
 trivial_regex = "warn"
 tuple_array_conversions = "warn"
 type_repetition_in_bounds = "warn"
-uninhabited_references = "warn"
 unnecessary_self_imports = "warn"
 unnecessary_struct_initialization = "warn"
 unnested_or_patterns = "warn"
@@ -103,17 +97,3 @@ use_self = "warn"
 useless_let_if_seq = "warn"
 while_float = "warn"
 zero_sized_map_values = "warn"
-
-# These are nursery lints which have findings. Allow them for now. Some are not
-# quite mature enough for use in our codebase and some we don't really want.
-# Explicitly listing should make it easier to fix in the future.
-as_ptr_cast_mut = "allow"
-cognitive_complexity = "allow"
-debug_assert_with_mut_call = "allow"
-fallible_impl_from = "allow"
-future_not_send = "allow"
-needless_collect = "allow"
-non_send_fields_in_send_ty = "allow"
-redundant_pub_crate = "allow"
-significant_drop_in_scrutinee = "allow"
-significant_drop_tightening = "allow"

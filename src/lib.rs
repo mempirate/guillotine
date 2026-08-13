@@ -122,10 +122,10 @@ enum Axis {
 }
 
 /// Operations, single pass:
-/// - Recursively walk the element tree to build the frame tree. For each element,
-/// calculate hard constraints (inner_constraints) and push them down to the children.
-/// - Once the leafs are resolved, push sizes back up the tree. For container elements,
-/// also calculate relative offsets for each child.
+/// - Recursively walk the element tree to build the frame tree. For each element, calculate hard
+///   constraints (inner_constraints) and push them down to the children.
+/// - Once the leafs are resolved, push sizes back up the tree. For container elements, also
+///   calculate relative offsets for each child.
 struct FrameTree<'a, C>
 where
     C: PixelColor,
@@ -139,7 +139,7 @@ where
     C: PixelColor,
 {
     /// Creates a new, empty frame tree.
-    fn new() -> Self {
+    const fn new() -> Self {
         Self { nodes: Vec::new(), root: None }
     }
 
@@ -152,7 +152,7 @@ where
 
     /// Returns the number of nodes in the frame tree.
     #[allow(unused)]
-    fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         self.nodes.len()
     }
 

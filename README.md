@@ -4,6 +4,12 @@ A `no-std` graphical user interface framework for embedded devices prioritizing 
 
 Works everywhere `embedded-graphics` works.
 
+## Quickstart
+
+```rust
+
+```
+
 ## Status
 In progress, working towards an alpha v0.0.1. Check the [roadmap](#roadmap).
 
@@ -126,7 +132,7 @@ cargo run --example power_monitor --features simulator
 ## Roadmap
 
 ### v0.0.1
-- [x] Try to mimic GPUI declaration style: https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/hello_world.rs
+- [x] Try to mimic GPUI declaration style: <https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/hello_world.rs>
 - [x] Low-level `Element` / `ParentElement` trait for custom elements and widgets
 - [x] Support generic `PixelColor`
 - [x] Full immediate mode redrawing
@@ -139,10 +145,10 @@ cargo run --example power_monitor --features simulator
     - Cool
     - ESP32
   - [x] Fix exports
-  - [ ] Dual Apache / MIT license
+  - [x] Dual Apache / MIT license
   - [x] Fix sdl2 vendoring for embedded-graphics-simulator
 - [ ] Benchmarks for Frame building
-- [x] TextStyle fonts
+- [x] `TextStyle` fonts
 - [ ] Support for non-interactive elements:
   - [x] Row
   - [x] (formatted) Text
