@@ -23,7 +23,8 @@ impl Render<Color> for BinaryView {
 
 fn main() {
     let display = SimulatorDisplay::<Color>::new(Size::new(320, 172));
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Color>::default();
+    let mut ui = Ui::new(display, storage);
 
     ui.render(&BinaryView).unwrap();
 

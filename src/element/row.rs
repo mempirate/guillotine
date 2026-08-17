@@ -9,7 +9,7 @@ use embedded_graphics::{
 };
 
 use crate::{
-    Style,
+    Context, FrameStorage, NodeIndex, Style,
     element::{Element, IntoElement, ParentElement, draw_box},
     layout::BoxLayout,
     style::StyledElement,
@@ -101,4 +101,50 @@ where
     C: PixelColor,
 {
     Row::new()
+}
+
+impl<'cx, C: PixelColor> Context<'cx, C> {
+    /// Creates an empty horizontal container builder.
+    pub fn row(&'cx self) -> RowBuilder<'cx, C> {
+        RowBuilder::new(self)
+    }
+}
+
+pub struct RowBuilder<'cx, C: PixelColor> {
+    pub(crate) style: Style<RowStyle, C>,
+    cx: &'cx Context<'cx, C>,
+    first_child: Option<NodeIndex>,
+    last_child: Option<NodeIndex>,
+}
+
+impl<'cx, C: PixelColor> RowBuilder<'cx, C> {
+    pub fn new(cx: &'cx Context<'cx, C>) -> Self {
+        Self { style: Style::default(), cx, first_child: None, last_child: None }
+    }
+}
+
+impl<'a, C> ParentElement<'a, C> for RowBuilder<'a, C>
+where
+    C: PixelColor,
+{
+    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a, C>>) {
+        todo!()
+        // let first = self.storage.len();
+        // self.storage.extend(elements);
+        // let last = self.storage.len();
+
+        // self.children.extend(first..last);
+    }
+}
+
+impl<'a, C> StyledElement for RowBuilder<'_, C>
+where
+    C: PixelColor,
+{
+    type Color = C;
+    type Specific = RowStyle;
+
+    fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color> {
+        &mut self.style
+    }
 }

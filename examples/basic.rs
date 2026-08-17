@@ -28,7 +28,8 @@ fn main() {
 
     let view = BasicView {};
 
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Rgb565>::default();
+    let mut ui = Ui::new(display, storage);
 
     ui.render(&view);
 

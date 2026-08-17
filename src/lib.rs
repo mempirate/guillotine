@@ -19,24 +19,52 @@ pub use element::{
     Column, ColumnStyle, Element, Font, IntoElement, ParentElement, Row, RowStyle, Text, TextStyle,
     TextStyledElement, column, row, text,
 };
+use heapless::VecView;
 pub use style::{Insets, Style, StyledElement};
 pub use theme::Theme;
 
 use crate::layout::{Constraints, Layout};
 
+/// Storage backed by [`heapless::Vec`] that holds frame data for rendering. Capacity is fixed at
+/// `N` items.
+#[derive(Default)]
+pub struct FrameStorage<C: PixelColor, const N: usize, const T: usize> {
+    nodes: heapless::Vec<Node<C>, N>,
+    text: heapless::Vec<u8, T>,
+}
+
+impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
+    /// Returns a mutable view into this storage buffer.
+    pub fn view(&mut self) -> StorageView<'_, C> {
+        StorageView { nodes: &mut self.nodes, text: &mut self.text }
+    }
+
+    /// Clears all nodes and text from this storage buffer.
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.text.clear();
+    }
+}
+
+/// A capacity-erased mutable view into a [`FrameStorage`] buffer.
+pub struct StorageView<'frame, C: PixelColor> {
+    nodes: &'frame mut VecView<Node<C>>,
+    text: &'frame mut VecView<u8>,
+}
+
 /// The [`Ui`] struct is the main entrypoint for the Guillotine UI framework.
 /// It manages the display and takes care of rendering the UI from a tree of [`Element`]s,
 /// with [`Self::render`].
-pub struct Ui<D>
+pub struct Ui<D, const N: usize = 64, const T: usize = 1024>
 where
     D: DrawTarget + OriginDimensions,
 {
     display: D,
-    cx: Context,
+    storage: FrameStorage<D::Color, N, T>,
     theme: Theme<D::Color>,
 }
 
-impl<D> Ui<D>
+impl<D, const N: usize, const T: usize> Ui<D, N, T>
 where
     D: DrawTarget + OriginDimensions,
 {
@@ -44,8 +72,12 @@ where
     ///
     /// This constructor supports arbitrary custom [`PixelColor`] implementations. For the
     /// standard embedded-graphics color types, [`Ui::new`] supplies a black and white theme.
-    pub fn with_theme(display: D, theme: Theme<D::Color>) -> Self {
-        Self { display, cx: Context::default(), theme }
+    pub fn with_theme(
+        display: D,
+        storage: FrameStorage<D::Color, N, T>,
+        theme: Theme<D::Color>,
+    ) -> Self {
+        Self { display, storage, theme }
     }
 
     /// Returns a new [`Ui`] instance with the given background color. This background color will
@@ -66,7 +98,12 @@ where
     where
         V: Render<D::Color>,
     {
-        let root = view.render(&mut self.cx).into_element();
+        self.storage.clear();
+
+        let frame = self.storage.view();
+        let mut cx = Context::new(frame);
+
+        let root = view.render(&mut cx).into_element();
 
         // Create the viewport constraints.
         let viewport = Constraints::max(self.display.size());
@@ -101,14 +138,14 @@ where
     }
 }
 
-impl<D> Ui<D>
+impl<D, const N: usize, const T: usize> Ui<D, N, T>
 where
     D: DrawTarget + OriginDimensions,
     Theme<D::Color>: Default,
 {
     /// Creates a new [`Ui`] instance with a black background and white foreground.
-    pub fn new(display: D) -> Self {
-        Self::with_theme(display, Theme::default())
+    pub fn new(display: D, storage: FrameStorage<D::Color, N, T>) -> Self {
+        Self::with_theme(display, storage, Theme::default())
     }
 }
 
@@ -126,15 +163,15 @@ enum Axis {
 ///   constraints (`inner_constraints`) and push them down to the children.
 /// - Once the leafs are resolved, push sizes back up the tree. For container elements, also
 ///   calculate relative offsets for each child.
-struct FrameTree<'a, C>
+struct FrameTree<C>
 where
     C: PixelColor,
 {
-    nodes: Vec<Node<'a, C>>,
+    nodes: Vec<Node<C>>,
     root: Option<NodeIndex>,
 }
 
-impl<'a, C> FrameTree<'a, C>
+impl<C> FrameTree<C>
 where
     C: PixelColor,
 {
@@ -144,7 +181,7 @@ where
     }
 
     /// Inserts a new node into the frame tree and returns its index.
-    fn insert(&mut self, node: Node<'a, C>) -> NodeIndex {
+    fn insert(&mut self, node: Node<C>) -> NodeIndex {
         let index = self.nodes.len();
         self.nodes.push(node);
         index
@@ -157,7 +194,11 @@ where
     }
 
     /// Resolves the root of the frame tree with the given element and constraints.
-    pub(crate) fn resolve(&mut self, root: Element<'a, C>, constraints: Constraints) -> NodeIndex {
+    pub(crate) fn resolve<'a>(
+        &mut self,
+        root: Element<'a, C>,
+        constraints: Constraints,
+    ) -> NodeIndex {
         let root = resolve(self, root, constraints, None);
         self.root = Some(root);
         root
@@ -270,10 +311,6 @@ where
             outer_size,
             border_size,
             content_size,
-
-            // Absolute bounds are resolved while traversing for paint
-            // or hit testing.
-            bounds: None,
         };
     }
 
@@ -344,7 +381,7 @@ const fn to_i32(value: u32) -> i32 {
 
 /// Recursively populates the frame tree with the given element and parent node.
 fn resolve<'a, C>(
-    tree: &mut FrameTree<'a, C>,
+    tree: &mut FrameTree<C>,
     mut element: Element<'a, C>,
     constraints: Constraints,
     parent: Option<NodeIndex>,
@@ -384,13 +421,25 @@ where
     index
 }
 
+enum NodeKind<C> {
+    Row(Style<RowStyle, C>),
+    Column(Style<ColumnStyle, C>),
+    Text(TextNode<C>),
+}
+
+struct TextNode<C> {
+    offset: u16,
+    len: u16,
+    style: Style<TextStyle, C>,
+}
+
 /// A node in a [`FrameTree`].
-struct Node<'a, C>
+struct Node<C>
 where
     C: PixelColor,
 {
     /// The node's element.
-    element: Element<'a, C>,
+    kind: NodeKind<C>,
     /// The layout of this node.
     layout: Layout,
 
@@ -465,14 +514,22 @@ where
     C: PixelColor,
 {
     /// Renders this element into an [`Element`] using the given [`Context`].
-    fn render<'a>(&'a self, cx: &mut Context) -> impl IntoElement<Element = Element<'a, C>>;
+    fn render<'a>(&'a self, cx: &mut Context<'a, C>) -> impl IntoElement<Element = Element<'a, C>>;
 }
 
 /// For now, unused. In the future, will be used for context management, such as:
 /// - Allocating and managing retained resources
 /// - Interactivity (from UI upstream)
-#[derive(Default)]
-pub struct Context {}
+pub struct Context<'frame, C: PixelColor = Rgb565> {
+    storage: core::cell::RefCell<StorageView<'frame, C>>,
+}
+
+impl<'frame, C: PixelColor> Context<'frame, C> {
+    /// Creates a new [`Context`] with the given [`FrameStorage`].
+    fn new(storage: StorageView<'frame, C>) -> Self {
+        Self { storage: core::cell::RefCell::new(storage) }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -490,7 +547,7 @@ mod tests {
     }
 
     impl Render for Dashboard {
-        fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
+        fn render<'a>(&'a self, _cx: &mut Context<'a>) -> impl IntoElement<Element = Element<'a>> {
             row()
                 .child(text(self.text))
                 .child(row().child(text("Nested")))
@@ -503,7 +560,8 @@ mod tests {
     fn row_composes_heterogeneous_and_conditional_children() {
         let dashboard = Dashboard { text: "Hello, World!" };
 
-        let element = dashboard.render(&mut Context::default()).into_element();
+        let mut storage = FrameStorage::<_, 10, 10>::default();
+        let element = dashboard.render(&mut Context::new(storage.view())).into_element();
 
         let Element::Row(row) = element else {
             panic!("expected a row");

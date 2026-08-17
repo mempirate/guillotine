@@ -65,10 +65,16 @@ fn main() {
 ### Declarative Definition
 - Explain the idea of declaratively building your UI
 
-### TODO: Hybrid Immediate & Retained Mode
+Status: implemented ✅
 
-### TODO: Similar tree-based layout to X
+### Hybrid Immediate & Retained Mode
+
+Status: unimplemented ❌
+
+### Similar tree-based layout to X
 - GPUI
+
+Status: implemented ✅
 
 ### State Management
 
@@ -76,6 +82,8 @@ fn main() {
 - Conceptually similar to Flutter (i.e. constraints go down, sizes go up)
   - constraints flow downward, sizes flow upward, positions flow downward
 - Requirement: single pass.
+
+Status: implemented ✅
 
 ## API
 
@@ -194,17 +202,17 @@ cargo run --example power_monitor --features simulator
   - [x] Fix sdl2 vendoring for embedded-graphics-simulator
 - [ ] Benchmarks for Frame building
 - [x] `TextStyle` fonts
-- [ ] Support for non-interactive elements:
+- [x] Support for non-interactive elements:
   - [x] Row
   - [x] (formatted) Text
   - [x] Column
-  - [ ] Spinner
-- [ ] Container gaps
 
 ### v0.1.0
-- [ ] Custom render modes: `Incremental` (only repaint changed regions, requires more memory), 
-      or `Redraw` (full redraw on every render, lowest memory footprint). Either as a feature
-      or runtime flag.
+- [ ] Add memory usage for examples
+  - cargo binutils for examples in CI (cargo size). This will detect regressions.
+- [ ] No alloc
+- [ ] Container gaps (flex from CSS)
+- [ ] Custom render modes feature: `incremental`. Turned on by default. Will use more memory to manage tree in between frames.
 - [ ] Define inremental redrawing triggers / states:
 ```rs
 enum DrawState {
@@ -218,11 +226,11 @@ enum DrawState {
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
+  - [ ] Spinner
 - [ ] Overflow behaviour:
   - [x] Visible
   - [ ] Clip
 - [ ] `profile` feature with `defmt` logs
-- [ ] No alloc
 - [ ] Custom elements
 - [ ] Alignment
 - [ ] Support for interaction

@@ -153,7 +153,8 @@ fn main() {
         cost: "EUR 1.84",
     };
 
-    let mut ui = Ui::new(display).with_background(CANVAS);
+    let storage = FrameStorage::<Rgb565>::default();
+    let mut ui = Ui::new(display, storage).with_background(CANVAS);
     ui.render(&monitor).unwrap();
 
     let output_settings = OutputSettingsBuilder::new().scale(3).build();
