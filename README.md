@@ -255,6 +255,7 @@ Additionally, I wanted to learn what it would take to build something like this.
   - [ ] Frame drawing
 - [ ] Container gaps (flex from CSS)
 - [ ] Incremental drawing behind an `inremental` feature
+- [ ] `framebuffer` feature
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
