@@ -151,8 +151,16 @@ fn main() {
     };
 
     let storage = FrameStorage::<Rgb565>::default();
+    println!("Storage size: {}", storage.size());
+
     let mut ui = Ui::new(display, storage).with_background(CANVAS);
     ui.render(&monitor).unwrap();
+
+    let usage = ui.storage().usage();
+    let cap = ui.storage().capacity();
+    println!("Usage: nodes={} text={}", usage.nodes, usage.text);
+    println!("Node utilization: {:.2}%", usage.nodes as f32 / cap.nodes as f32 * 100.0);
+    println!("Text utilization: {:.2}%", usage.text as f32 / cap.text as f32 * 100.0);
 
     let output_settings = OutputSettingsBuilder::new().scale(3).build();
     let title = format!("Guillotine: {}", env!("CARGO_BIN_NAME"));

@@ -24,6 +24,8 @@ impl Render<Color> for BinaryView {
 fn main() {
     let display = SimulatorDisplay::<Color>::new(Size::new(320, 172));
     let storage = FrameStorage::<Color>::default();
+    println!("storage size: {}", storage.size());
+
     let mut ui = Ui::new(display, storage);
 
     ui.render(&BinaryView).unwrap();

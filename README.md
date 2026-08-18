@@ -210,6 +210,8 @@ cargo run --example power_monitor --features simulator
 - [ ] Add memory usage for examples
   - cargo binutils for examples in CI (cargo size). This will detect regressions.
 - [x] No alloc
+- [ ] Documentation
+  - [ ] Guide for finding the ideal `FrameStorage` capacity.
 - [ ] Benchmarks for Frame building
 - [ ] Container gaps (flex from CSS)
 - [ ] Custom render modes feature: `incremental`. Turned on by default. Will use more memory to manage tree in between frames.

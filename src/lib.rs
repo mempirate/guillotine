@@ -40,6 +40,26 @@ pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 102
     text: heapless::Vec<u8, T>,
 }
 
+/// Tracks the usage of a [`FrameStorage`] buffer.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct FrameUsage {
+    /// The number of used nodes.
+    pub nodes: usize,
+    /// The number of bytes used for text content.
+    pub text: usize,
+}
+
+/// Tracks the capacity of a [`FrameStorage`] buffer.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct FrameCapacity {
+    /// The maximum number of nodes.
+    pub nodes: usize,
+    /// The maximum number of bytes for text content.
+    pub text: usize,
+}
+
 impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
     /// Returns a mutable view into this storage buffer.
     pub const fn view(&mut self) -> StorageView<'_, C> {
@@ -50,6 +70,21 @@ impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.text.clear();
+    }
+
+    /// Returns the size of this storage buffer in bytes.
+    pub fn size(&self) -> usize {
+        core::mem::size_of::<Self>()
+    }
+
+    /// Returns the number of bytes currently used in this storage buffer.
+    pub fn usage(&self) -> FrameUsage {
+        FrameUsage { nodes: self.nodes.len(), text: self.text.len() }
+    }
+
+    /// Returns the capacity of this storage buffer.
+    pub fn capacity(&self) -> FrameCapacity {
+        FrameCapacity { nodes: N, text: T }
     }
 }
 
@@ -156,6 +191,11 @@ where
     /// Returns the UI theme.
     pub const fn theme(&self) -> &Theme<D::Color> {
         &self.theme
+    }
+
+    /// Returns a reference to the frame storage.
+    pub fn storage(&self) -> &FrameStorage<D::Color, N, T> {
+        &self.storage
     }
 }
 

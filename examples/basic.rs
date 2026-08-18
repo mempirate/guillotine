@@ -29,6 +29,8 @@ fn main() {
     let view = BasicView {};
 
     let storage = FrameStorage::<Rgb565>::default();
+    println!("storage size: {}", storage.size());
+
     let mut ui = Ui::new(display, storage);
 
     ui.render(&view).unwrap();
