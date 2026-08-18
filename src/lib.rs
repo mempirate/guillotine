@@ -300,7 +300,6 @@ impl<'frame, C: PixelColor> Context<'frame, C> {
     /// Inserts a node into the storage, returning its index.
     /// Returns `None` if storage is full.
     fn insert(&self, node: Node<C>) -> Result<NodeIndex, BuildError> {
-        // TODO: Handle text nodes.
         let mut storage = self.storage.borrow_mut();
         let index = storage.nodes.len();
         storage.nodes.push(node).map_err(|_| BuildError::NodeCapacity)?;
