@@ -726,7 +726,7 @@ mod tests {
 
     fn text_content<'a, C: PixelColor>(tree: &'a FrameTree<'_, C>, index: NodeIndex) -> &'a str {
         match &tree.node(index).kind {
-            NodeKind::Text(text) => text.content(&tree.storage.text),
+            NodeKind::Text(text) => text.content(tree.storage.text),
             _ => panic!("expected a text node"),
         }
     }
