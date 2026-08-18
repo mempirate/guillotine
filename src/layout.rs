@@ -51,8 +51,6 @@ pub(crate) struct Layout {
     pub(crate) border_size: Size,
     /// Size of the actual content.
     pub(crate) content_size: Size,
-    /// Absolute bounds of the node.
-    pub(crate) bounds: Option<Rectangle>,
 }
 
 impl Layout {
@@ -66,8 +64,6 @@ impl Layout {
             outer_size: Size::zero(),
             border_size: Size::zero(),
             content_size: Size::zero(),
-
-            bounds: None,
         }
     }
 

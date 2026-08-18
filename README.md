@@ -33,26 +33,27 @@ struct BasicView {
 
 impl Render for BasicView {
     // Render lets you declaratively build your UI tree.
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        column()
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.column()
             .padding(10)
             .margin(10)
             .border(2)
             .border_color(Rgb565::BLUE)
-            .child(text(self.greeting).background(Rgb565::RED).margin(5))
-            .child(text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
+            .child(cx.text(self.greeting).background(Rgb565::RED).margin(5))
+            .child(cx.text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
     }
 }
 
 fn main() {
     // Display should implement embedded_graphics DrawTarget
-    let display = MockDisplay::new();
+    let display = MockDisplay::<Rgb565>::new();
 
     let view = BasicView {
         greeting: "Hello world!"
     };
 
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Rgb565>::default();
+    let mut ui = Ui::new(display, storage);
 
     // Render the view
     ui.render(&view);
@@ -65,10 +66,16 @@ fn main() {
 ### Declarative Definition
 - Explain the idea of declaratively building your UI
 
-### TODO: Hybrid Immediate & Retained Mode
+Status: implemented ✅
 
-### TODO: Similar tree-based layout to X
+### Hybrid Immediate & Retained Mode
+
+Status: unimplemented ❌
+
+### Similar tree-based layout to X
 - GPUI
+
+Status: implemented ✅
 
 ### State Management
 
@@ -77,11 +84,11 @@ fn main() {
   - constraints flow downward, sizes flow upward, positions flow downward
 - Requirement: single pass.
 
+Status: implemented ✅
+
 ## API
 
 ```rust,no_run
-extern crate alloc;
-
 use embedded_graphics::{prelude::*, mock_display::MockDisplay, pixelcolor::Rgb565};
 
 use guillotine::*;
@@ -92,34 +99,35 @@ struct Home {
 }
 
 impl Render for Home {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        row()
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.row()
             .bg(Rgb565::RED)
-            .child(text(self.header))
-            .when(self.show_button, |row| row.child(text("Click me")))
-            .children([text("Copyright"), text("ACME Corp")])
+            .child(cx.text(self.header))
+            .when(self.show_button, |row| row.child(cx.text("Click me")))
+            .children([cx.text("Copyright"), cx.text("ACME Corp")])
     }
 }
 
 struct Page {
-    power: f32,
-    current: f32,
-    voltage: f32,
+    power: &'static str,
+    current: &'static str,
+    voltage: &'static str,
 }
 
 impl Render for Page {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        column()
-            .child(text(alloc::format!("Power: {}", self.power)))
-            .child(text(alloc::format!("Current: {}", self.current)))
-            .child(text(alloc::format!("Voltage: {}", self.voltage)))
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.column()
+            .child(cx.text(self.power))
+            .child(cx.text(self.current))
+            .child(cx.text(self.voltage))
     }
 }
 
 fn main() {
-    let display = MockDisplay::new();
+    let display = MockDisplay::<Rgb565>::new();
 
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Rgb565>::default();
+    let mut ui = Ui::new(display, storage);
 
     let mut home = Home {
         show_button: false,
@@ -132,10 +140,10 @@ fn main() {
 
     ui.render(&home).unwrap();
 
-    let mut page = Page { 
-        power: 50.0,
-        voltage: 230.0,
-        current: 0.2173
+    let page = Page {
+        power: "Power: 50.0 W",
+        voltage: "Voltage: 230.0 V",
+        current: "Current: 0.2173 A",
     };
 
     ui.render(&page);
@@ -151,7 +159,7 @@ constructors and style methods infer it. See the [binary-color example](examples
 Margin, padding, and border widths accept CSS-like physical-edge shorthands:
 
 ```rust,ignore
-column()
+cx.column()
     .margin(10)                 // all edges
     .padding((4, 8))            // vertical, horizontal
     .border((1, 2, 3))          // top, horizontal, bottom
@@ -183,8 +191,8 @@ cargo run --example power_monitor --features simulator
 - [x] Full immediate mode redrawing
 - [ ] Make repo ready for publishing:
   - [ ] README documentation (a la Dioxus)
-  - [ ] Rustdoc documentation
-  - [ ] Examples
+  - [x] Rustdoc documentation
+  - [x] Examples
     - Sizing (insets)
     - Fonts
     - Cool
@@ -192,19 +200,21 @@ cargo run --example power_monitor --features simulator
   - [x] Fix exports
   - [x] Dual Apache / MIT license
   - [x] Fix sdl2 vendoring for embedded-graphics-simulator
-- [ ] Benchmarks for Frame building
 - [x] `TextStyle` fonts
-- [ ] Support for non-interactive elements:
+- [x] Support for non-interactive elements:
   - [x] Row
   - [x] (formatted) Text
   - [x] Column
-  - [ ] Spinner
-- [ ] Container gaps
 
 ### v0.1.0
-- [ ] Custom render modes: `Incremental` (only repaint changed regions, requires more memory), 
-      or `Redraw` (full redraw on every render, lowest memory footprint). Either as a feature
-      or runtime flag.
+- [ ] Add memory usage for examples
+  - cargo binutils for examples in CI (cargo size). This will detect regressions.
+- [x] No alloc
+- [ ] Documentation
+  - [ ] Guide for finding the ideal `FrameStorage` capacity.
+- [ ] Benchmarks for Frame building
+- [ ] Container gaps (flex from CSS)
+- [ ] Custom render modes feature: `incremental`. Turned on by default. Will use more memory to manage tree in between frames.
 - [ ] Define inremental redrawing triggers / states:
 ```rs
 enum DrawState {
@@ -218,11 +228,11 @@ enum DrawState {
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
+  - [ ] Spinner
 - [ ] Overflow behaviour:
   - [x] Visible
   - [ ] Clip
 - [ ] `profile` feature with `defmt` logs
-- [ ] No alloc
 - [ ] Custom elements
 - [ ] Alignment
 - [ ] Support for interaction

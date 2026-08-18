@@ -12,14 +12,14 @@ use guillotine::*;
 struct BasicView {}
 
 impl Render for BasicView {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        column()
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.column()
             .padding(10)
             .margin(10)
             .border(2)
             .border_color(Rgb565::BLUE)
-            .child(text("Hello, World!").background(Rgb565::RED).margin(5))
-            .child(text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
+            .child(cx.text("Hello, World!").background(Rgb565::RED).margin(5))
+            .child(cx.text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
     }
 }
 
@@ -28,9 +28,12 @@ fn main() {
 
     let view = BasicView {};
 
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Rgb565>::default();
+    println!("storage size: {}", storage.size());
 
-    ui.render(&view);
+    let mut ui = Ui::new(display, storage);
+
+    ui.render(&view).unwrap();
 
     let output_settings = OutputSettingsBuilder::new().build();
     let title = format!("Guillotine: {}", env!("CARGO_BIN_NAME"));

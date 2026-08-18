@@ -1,0 +1,183 @@
+name: Memory probe
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+concurrency:
+  group: memory-probe-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
+# The measurement job builds pull-request code with a read-only token. The reporting job receives
+# write permission separately and never executes code or binaries from the pull request.
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request &&
+       github.event.comment.body == '/probe' &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out trusted measurement tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: tooling
+          persist-credentials: false
+
+      - name: Resolve revisions
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" > "${RUNNER_TEMP}/commit.json"
+            echo "head_repo=${GITHUB_REPOSITORY}" >> "${GITHUB_OUTPUT}"
+            echo "head_sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+            echo "base_repo=${GITHUB_REPOSITORY}" >> "${GITHUB_OUTPUT}"
+            echo "base_sha=$(jq -r '.parents[0].sha // empty' "${RUNNER_TEMP}/commit.json")" \
+              >> "${GITHUB_OUTPUT}"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "${RUNNER_TEMP}/pr.json"
+            echo "head_repo=$(jq -r '.head.repo.full_name' "${RUNNER_TEMP}/pr.json")" \
+              >> "${GITHUB_OUTPUT}"
+            echo "head_sha=$(jq -r '.head.sha' "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
+            echo "base_repo=$(jq -r '.base.repo.full_name' "${RUNNER_TEMP}/pr.json")" \
+              >> "${GITHUB_OUTPUT}"
+            echo "base_sha=$(jq -r '.base.sha' "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Check out head revision
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          path: head
+          persist-credentials: false
+
+      - name: Check out base revision
+        if: steps.pr.outputs.base_sha != ''
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.pr.outputs.base_repo }}
+          ref: ${{ steps.pr.outputs.base_sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Install ELF inspection tools
+        id: llvm
+        run: |
+          rustup component add llvm-tools --toolchain stable
+          rustup component add rust-src --toolchain stable
+          rustup target add riscv32imc-unknown-none-elf --toolchain stable
+          host="$(rustc +stable -vV | sed -n 's/^host: //p')"
+          echo "bin=$(rustc +stable --print sysroot)/lib/rustlib/${host}/bin" >> "${GITHUB_OUTPUT}"
+          echo "rustc=$(rustc +stable -V)" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and measure head
+        env:
+          COMMIT: ${{ steps.pr.outputs.head_sha }}
+          LLVM_BIN: ${{ steps.llvm.outputs.bin }}
+          RUSTC_VERSION: ${{ steps.llvm.outputs.rustc }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/probe-results"
+          cd head/probes/power-monitor-probe
+          CARGO_TARGET_DIR="${RUNNER_TEMP}/probe-target-head" cargo +stable build --release --locked
+          elf="${RUNNER_TEMP}/probe-target-head/riscv32imc-unknown-none-elf/release/power-monitor-probe"
+          python3 "${GITHUB_WORKSPACE}/tooling/scripts/measure-probe-memory.py" \
+            --elf "${elf}" \
+            --commit "${COMMIT}" \
+            --rustc "${RUSTC_VERSION}" \
+            --llvm-size "${LLVM_BIN}/llvm-size" \
+            --llvm-nm "${LLVM_BIN}/llvm-nm" \
+            --json "${RUNNER_TEMP}/probe-results/head.json" \
+            --symbols "${RUNNER_TEMP}/probe-results/head-symbols.txt"
+          cp "${elf}" "${RUNNER_TEMP}/probe-results/head.elf"
+
+      - name: Build and measure base
+        env:
+          COMMIT: ${{ steps.pr.outputs.base_sha }}
+          LLVM_BIN: ${{ steps.llvm.outputs.bin }}
+          RUSTC_VERSION: ${{ steps.llvm.outputs.rustc }}
+        run: |
+          if [[ ! -f base/probes/power-monitor-probe/Cargo.toml ]]; then
+            printf '{"available":false}\n' > "${RUNNER_TEMP}/probe-results/base.json"
+            exit 0
+          fi
+
+          cd base/probes/power-monitor-probe
+          CARGO_TARGET_DIR="${RUNNER_TEMP}/probe-target-base" cargo +stable build --release --locked
+          elf="${RUNNER_TEMP}/probe-target-base/riscv32imc-unknown-none-elf/release/power-monitor-probe"
+          python3 "${GITHUB_WORKSPACE}/tooling/scripts/measure-probe-memory.py" \
+            --elf "${elf}" \
+            --commit "${COMMIT}" \
+            --rustc "${RUSTC_VERSION}" \
+            --llvm-size "${LLVM_BIN}/llvm-size" \
+            --llvm-nm "${LLVM_BIN}/llvm-nm" \
+            --json "${RUNNER_TEMP}/probe-results/base.json" \
+            --symbols "${RUNNER_TEMP}/probe-results/base-symbols.txt"
+
+      - name: Upload measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-memory-${{ github.run_id }}
+          path: ${{ runner.temp }}/probe-results
+          if-no-files-found: error
+          retention-days: 30
+
+  report:
+    needs: measure
+    if: needs.measure.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out trusted reporting tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: tooling
+          persist-credentials: false
+
+      - name: Download measurements
+        uses: actions/download-artifact@v8
+        with:
+          name: probe-memory-${{ github.run_id }}
+          path: ${{ runner.temp }}/probe-results
+
+      - name: Render comparison
+        run: |
+          python3 tooling/scripts/compare-probe-memory.py \
+            --base "${RUNNER_TEMP}/probe-results/base.json" \
+            --head "${RUNNER_TEMP}/probe-results/head.json" \
+            --output "${RUNNER_TEMP}/probe-comment.md"
+          printf '\n[Workflow run](https://github.com/%s/actions/runs/%s)\n' \
+            "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}" >> "${RUNNER_TEMP}/probe-comment.md"
+          cat "${RUNNER_TEMP}/probe-comment.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Comment on pull request
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          jq -n --rawfile body "${RUNNER_TEMP}/probe-comment.md" '{body: $body}' \
+            > "${RUNNER_TEMP}/probe-comment.json"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --input "${RUNNER_TEMP}/probe-comment.json"

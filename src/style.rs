@@ -119,6 +119,7 @@ impl_insets_from!(i32, |value: i32| {
 });
 
 /// The style of a box, including margin, border, padding, and size.
+// TODO: Borrow fields instead of owning.
 pub(crate) struct BoxStyle {
     pub margin: Insets,
     pub border: Insets,
@@ -256,6 +257,9 @@ pub trait StyledElement: Sized {
     /// The specific style type for this element.
     type Specific: Default;
 
+    /// Returns a reference to the element's specific style.
+    fn style(&self) -> &Style<Self::Specific, Self::Color>;
+
     /// Returns a mutable reference to the element's specific style.
     fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color>;
 
@@ -278,9 +282,8 @@ pub trait StyledElement: Sized {
     }
 
     /// Shorthand for [`Self::background`].
-    fn bg(mut self, color: Self::Color) -> Self {
-        self.style_mut().background = Some(color);
-        self
+    fn bg(self, color: Self::Color) -> Self {
+        self.background(color)
     }
 
     /// Sets the border widths using a CSS-like one-to-four-value inset shorthand.
