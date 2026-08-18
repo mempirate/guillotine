@@ -73,17 +73,17 @@ impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
     }
 
     /// Returns the size of this storage buffer in bytes.
-    pub fn size(&self) -> usize {
+    pub const fn size(&self) -> usize {
         core::mem::size_of::<Self>()
     }
 
-    /// Returns the number of bytes currently used in this storage buffer.
+    /// Returns the number of elements currently used in this storage buffer.
     pub fn usage(&self) -> FrameUsage {
         FrameUsage { nodes: self.nodes.len(), text: self.text.len() }
     }
 
     /// Returns the capacity of this storage buffer.
-    pub fn capacity(&self) -> FrameCapacity {
+    pub const fn capacity(&self) -> FrameCapacity {
         FrameCapacity { nodes: N, text: T }
     }
 }
@@ -194,7 +194,7 @@ where
     }
 
     /// Returns a reference to the frame storage.
-    pub fn storage(&self) -> &FrameStorage<D::Color, N, T> {
+    pub const fn storage(&self) -> &FrameStorage<D::Color, N, T> {
         &self.storage
     }
 }
