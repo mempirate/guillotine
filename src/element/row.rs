@@ -1,10 +1,12 @@
 use embedded_graphics::prelude::PixelColor;
 
 use crate::{
-    Context, Node, NodeIndex, NodeKind, Style,
+    Context, Style,
+    common::NodeIndex,
     element::{BuildError, ElementBuilder, ParentElement},
     layout::Layout,
     style::StyledElement,
+    tree::{Node, NodeKind},
 };
 
 /// Style for this row.

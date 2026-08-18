@@ -2,16 +2,16 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
 
+mod common;
 mod element;
 mod layout;
 pub mod style;
 mod theme;
+mod tree;
 
 use embedded_graphics::{
-    mono_font::MonoTextStyleBuilder,
     pixelcolor::Rgb565,
-    prelude::{DrawTarget, Drawable as _, OriginDimensions, PixelColor, Point, Size},
-    text::{Baseline, Text as GraphicsText},
+    prelude::{DrawTarget, OriginDimensions, PixelColor},
 };
 
 pub use element::{
@@ -23,9 +23,9 @@ pub use style::{Insets, Style, StyledElement};
 pub use theme::Theme;
 
 use crate::{
-    element::draw_box,
-    layout::{BoxLayout, Constraints, Layout},
-    style::BoxStyle,
+    common::{NodeIndex, TextRange},
+    layout::Constraints,
+    tree::{FrameTree, Node},
 };
 
 /// Storage backed by [`heapless::Vec`] that holds frame data for rendering. Capacity is fixed at
@@ -210,346 +210,6 @@ where
     }
 }
 
-type NodeIndex = usize;
-
-/// The axis along which a container lays out its children.
-#[derive(Clone, Copy)]
-enum Axis {
-    Horizontal,
-    Vertical,
-}
-
-/// Operations, single pass:
-/// - Recursively walk the element tree to build the frame tree. For each element, calculate hard
-///   constraints (`inner_constraints`) and push them down to the children.
-/// - Once the leafs are resolved, push sizes back up the tree. For container elements, also
-///   calculate relative offsets for each child.
-struct FrameTree<'frame, C>
-where
-    C: PixelColor,
-{
-    root: Option<NodeIndex>,
-    storage: StorageView<'frame, C>,
-}
-
-impl<'frame, C> FrameTree<'frame, C>
-where
-    C: PixelColor,
-{
-    /// Creates a new (unresolved) frame tree from the given storage.
-    const fn new(storage: StorageView<'frame, C>) -> Self {
-        Self { root: None, storage }
-    }
-
-    /// Returns the number of nodes in the frame tree.
-    #[allow(unused)]
-    fn len(&self) -> usize {
-        self.storage.nodes.len()
-    }
-
-    /// Returns a reference to the node at the given index.
-    #[inline]
-    fn node(&self, index: NodeIndex) -> &Node<C> {
-        &self.storage.nodes[index]
-    }
-
-    /// Returns a mutable reference to the node at the given index.
-    #[inline]
-    fn node_mut(&mut self, index: NodeIndex) -> &mut Node<C> {
-        &mut self.storage.nodes[index]
-    }
-
-    /// Resolves the tree: lays out the root node and its children recursively.
-    pub(crate) fn resolve(&mut self, root: NodeIndex, constraints: Constraints) {
-        self.root = Some(root);
-        self.layout_node(root, constraints);
-    }
-
-    /// Draws the frame tree onto the given display, starting with `root` at `offset`.
-    pub(crate) fn draw<D>(&mut self, display: &mut D, theme: &Theme<C>) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        let Some(root) = self.root else {
-            return Ok(());
-        };
-
-        self.draw_node(root, Point::zero(), display, theme)
-    }
-
-    fn draw_node<D>(
-        &mut self,
-        index: NodeIndex,
-        parent_origin: Point,
-        display: &mut D,
-        theme: &Theme<C>,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        let node = self.node(index);
-        let layout = node.layout.resolve(parent_origin);
-
-        if let NodeKind::Text(text) = &node.kind {
-            // Extract the content of the text node.
-            let content = text.content(self.storage.text);
-
-            text.draw(content, &layout, display, theme)?;
-        } else {
-            node.draw(&layout, display)?;
-        }
-
-        let mut child = node.child;
-
-        while let Some(index) = child {
-            self.draw_node(index, layout.content.top_left, display, theme)?;
-            child = self.node(index).sibling;
-        }
-
-        Ok(())
-    }
-
-    // TODO: Clean up
-    fn layout_node(&mut self, index: NodeIndex, constraints: Constraints) {
-        // Extract the common box style properties.
-        let box_style = self.node(index).box_style();
-
-        let border_constraints = box_style.border_constraints(constraints);
-
-        let content_constraints = box_style.content_constraints(constraints);
-
-        // Determine the content's intrinsic size without retaining a
-        // borrow of `self.nodes[index]` while layout_children mutates children.
-        enum ContentLayout {
-            Container(Axis),
-            // A leaf with an inherent size.
-            Leaf(Size),
-        }
-
-        let content_layout = match &self.node(index).kind {
-            NodeKind::Column(_) => ContentLayout::Container(Axis::Vertical),
-            NodeKind::Row(_) => ContentLayout::Container(Axis::Horizontal),
-            NodeKind::Text(text) => ContentLayout::Leaf(content_constraints.constrain(text.size)),
-        };
-
-        let intrinsic_content_size = match content_layout {
-            ContentLayout::Container(axis) => {
-                self.layout_children(index, content_constraints, axis)
-            }
-
-            ContentLayout::Leaf(size) => size,
-        };
-
-        let content_insets = box_style.content_insets();
-        let content_inset_size = content_insets.total_size();
-        let border_size = {
-            // The "natural" border size, i.e. derived from its children.
-            let natural_border_size = intrinsic_content_size.inflate(content_inset_size);
-
-            // A configured size describes the border box, but it grows to fit border and padding
-            // when the parent constraints allow it.
-            let desired_border_size = box_style.size.map_or(natural_border_size, |size| {
-                Size::new(
-                    size.width.max(content_inset_size.width),
-                    size.height.max(content_inset_size.height),
-                )
-            });
-
-            border_constraints.constrain(desired_border_size)
-        };
-
-        let outer_size = border_size.inflate(box_style.margin.total_size());
-
-        let content_size = border_size.deflate(content_inset_size);
-
-        let content_offset = box_style.margin.saturating_add(content_insets);
-
-        self.node_mut(index).layout = Layout {
-            // The parent assigns this later. The root remains at zero.
-            offset: Point::new(0, 0),
-
-            // Both offsets are relative to the node's outer-box origin.
-            border_offset: Point::new(to_i32(box_style.margin.left), to_i32(box_style.margin.top)),
-
-            content_offset: Point::new(to_i32(content_offset.left), to_i32(content_offset.top)),
-
-            outer_size,
-            border_size,
-            content_size,
-        };
-    }
-
-    /// Lays out the container at `index` along `axis`:
-    /// - Traverses the children and sets their offsets.
-    /// - Sums the children's sizes on the main axis and takes their maximum size on the cross axis.
-    /// - Returns the constrained intrinsic size.
-    fn layout_children(&mut self, index: NodeIndex, constraints: Constraints, axis: Axis) -> Size {
-        let mut main_size: u32 = 0;
-        let mut cross_size: u32 = 0;
-
-        // Get the optional child.
-        let mut child = self.node(index).child;
-
-        while let Some(child_idx) = child {
-            self.layout_node(child_idx, constraints);
-
-            let size = self.node(child_idx).layout.outer_size;
-
-            let main_offset = i32::try_from(main_size).unwrap_or(i32::MAX);
-
-            // TODO: Only allows for start alignment, and no gap.
-            let offset = match axis {
-                Axis::Horizontal => Point::new(main_offset, 0),
-                Axis::Vertical => Point::new(0, main_offset),
-            };
-
-            self.node_mut(child_idx).layout.set_offset(offset);
-
-            let (child_main_size, child_cross_size) = match axis {
-                Axis::Horizontal => (size.width, size.height),
-                Axis::Vertical => (size.height, size.width),
-            };
-
-            main_size = main_size.saturating_add(child_main_size);
-            cross_size = cross_size.max(child_cross_size);
-
-            child = self.node(child_idx).sibling;
-        }
-
-        let intrinsic_size = match axis {
-            Axis::Horizontal => Size::new(main_size, cross_size),
-            Axis::Vertical => Size::new(cross_size, main_size),
-        };
-
-        constraints.constrain(intrinsic_size)
-    }
-}
-
-trait SizeExt {
-    /// Inflates the size by a horizontal and vertical amount.
-    fn inflate(self, by: Size) -> Self;
-
-    /// Deflates the size by a horizontal and vertical amount.
-    fn deflate(self, by: Size) -> Self;
-}
-
-impl SizeExt for Size {
-    fn inflate(self, by: Size) -> Self {
-        Self::new(self.width.saturating_add(by.width), self.height.saturating_add(by.height))
-    }
-
-    fn deflate(self, by: Size) -> Self {
-        self.saturating_sub(by)
-    }
-}
-
-const fn to_i32(value: u32) -> i32 {
-    if value > i32::MAX as u32 { i32::MAX } else { value as i32 }
-}
-
-enum NodeKind<C> {
-    Row(Style<RowStyle, C>),
-    Column(Style<ColumnStyle, C>),
-    Text(TextNode<C>),
-}
-
-impl<C: PixelColor> NodeKind<C> {
-    pub(crate) const fn box_style(&self) -> BoxStyle {
-        match self {
-            Self::Row(style) => style.box_style(),
-            Self::Column(style) => style.box_style(),
-            Self::Text(text) => text.style.box_style(),
-        }
-    }
-
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        match self {
-            Self::Row(style) => draw_box(style, layout, display),
-            Self::Column(style) => draw_box(style, layout, display),
-            _ => unimplemented!("text drawing uses a different code path"),
-        }
-    }
-}
-
-struct TextNode<C> {
-    range: TextRange,
-    size: Size,
-    style: Style<TextStyle<C>, C>,
-}
-
-impl<C: PixelColor> TextNode<C> {
-    /// Extracts the content of this text node as a `&str` slice.
-    pub(crate) fn content<'a>(&self, storage: &'a [u8]) -> &'a str {
-        let end = self.range.offset + self.range.len;
-
-        unsafe { core::str::from_utf8_unchecked(&storage[self.range.offset..end]) }
-    }
-
-    #[inline]
-    pub(crate) fn draw<D>(
-        &self,
-        content: &str,
-        layout: &BoxLayout,
-        display: &mut D,
-        theme: &Theme<C>,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        draw_box(&self.style, layout, display)?;
-
-        match self.style.font {
-            Font::Mono(font) => {
-                let character_style = MonoTextStyleBuilder::new()
-                    .font(font)
-                    .text_color(self.style.color.unwrap_or(theme.foreground))
-                    .build();
-
-                GraphicsText::with_baseline(
-                    content,
-                    layout.content.top_left,
-                    character_style,
-                    Baseline::Top,
-                )
-                .draw(display)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-/// A node in a [`FrameTree`].
-struct Node<C>
-where
-    C: PixelColor,
-{
-    /// The node's element.
-    kind: NodeKind<C>,
-    /// The layout of this node.
-    layout: Layout,
-
-    /// Index of the first child node, if any.
-    child: Option<NodeIndex>,
-    /// Index of the next sibling node, if any.
-    sibling: Option<NodeIndex>,
-}
-
-impl<C: PixelColor> Node<C> {
-    pub(crate) const fn box_style(&self) -> BoxStyle {
-        self.kind.box_style()
-    }
-
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        self.kind.draw(layout, display)
-    }
-}
-
 /// A helper trait for building complex objects with imperative conditionals in a fluent style.
 pub trait FluentBuilder {
     /// Imperatively modify self with the given closure.
@@ -622,12 +282,6 @@ pub struct Context<'frame, C: PixelColor = Rgb565> {
     storage: core::cell::RefCell<StorageView<'frame, C>>,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct TextRange {
-    pub offset: usize,
-    pub len: usize,
-}
-
 impl<'frame, C: PixelColor> Context<'frame, C> {
     /// Creates a new [`Context`] with the given [`FrameStorage`].
     const fn new(storage: StorageView<'frame, C>) -> Self {
@@ -639,7 +293,7 @@ impl<'frame, C: PixelColor> Context<'frame, C> {
     fn link_sibling(&self, node: NodeIndex, sibling: NodeIndex) {
         let mut storage = self.storage.borrow_mut();
 
-        storage.nodes[node].sibling = Some(sibling);
+        storage.nodes[node].set_sibling(sibling);
     }
 
     /// Inserts a node into the storage, returning its index.
@@ -681,6 +335,8 @@ mod tests {
         prelude::{Point, RgbColor as _, Size},
         primitives::Rectangle,
     };
+
+    use crate::tree::NodeKind;
 
     use super::*;
 

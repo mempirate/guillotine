@@ -6,10 +6,12 @@ use embedded_graphics::{
 };
 
 use crate::{
-    Context, Node, NodeIndex, NodeKind, Style, TextNode,
+    Context, Style,
+    common::NodeIndex,
     element::{BuildError, ElementBuilder},
     layout::Layout,
     style::StyledElement,
+    tree::{Node, NodeKind, TextNode},
 };
 
 /// Text style.
