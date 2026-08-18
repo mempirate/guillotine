@@ -10,14 +10,14 @@ type Color = BinaryColor;
 struct BinaryView;
 
 impl Render<Color> for BinaryView {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a, Color>> {
-        column()
+    fn render(&self, cx: &Context<'_, Color>) -> impl ElementBuilder {
+        cx.column()
             .padding(10)
             .margin(10)
             .border(2)
             .border_color(Color::On)
-            .child(text("Generic PixelColor").margin(5))
-            .child(text("Binary display").margin(5).text_color(Color::On))
+            .child(cx.text("Generic PixelColor").margin(5))
+            .child(cx.text("Binary display").margin(5).text_color(Color::On))
     }
 }
 

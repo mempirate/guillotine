@@ -1,9 +1,7 @@
 //! Shelly Plug power-monitor dashboard for a 320 × 172 display.
 //!
-//! The sample data mirrors `mempirate/shellyctl::PowerStatus`. A real integration can keep the
-//! formatted strings in its application state and rerender this view after each Shelly poll.
-use std::env;
-
+//! This mirrors the dashboard in `mempirate/shellyctl`. A real integration can keep formatted
+//! readings in application state and rerender this view after each Shelly poll.
 use embedded_graphics::{
     mono_font::ascii::{FONT_6X10, FONT_9X18_BOLD, FONT_10X20},
     pixelcolor::Rgb565,
@@ -12,16 +10,15 @@ use embedded_graphics::{
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, Window};
 use guillotine::{style::StyledElement, *};
 
-const CANVAS: Rgb565 = Rgb565::new(1, 3, 7);
-const PANEL: Rgb565 = Rgb565::new(2, 7, 11);
-const PANEL_HIGHLIGHT: Rgb565 = Rgb565::new(1, 13, 16);
-const CYAN: Rgb565 = Rgb565::new(0, 51, 27);
-const GREEN: Rgb565 = Rgb565::new(7, 53, 12);
-const AMBER: Rgb565 = Rgb565::new(31, 36, 2);
-const MUTED: Rgb565 = Rgb565::new(14, 31, 18);
+// A deliberately restrained palette: neutral surfaces and one status accent.
+const CANVAS: Rgb565 = Rgb565::new(2, 3, 4);
+const PANEL: Rgb565 = Rgb565::new(4, 8, 9);
+const PANEL_STRONG: Rgb565 = Rgb565::new(5, 11, 11);
+const EDGE: Rgb565 = Rgb565::new(8, 17, 16);
+const ACCENT: Rgb565 = Rgb565::new(12, 50, 27);
+const MUTED: Rgb565 = Rgb565::new(17, 34, 25);
 
 struct PowerMonitor<'a> {
-    device: &'a str,
     power: &'a str,
     voltage: &'a str,
     current: &'a str,
@@ -30,127 +27,127 @@ struct PowerMonitor<'a> {
 }
 
 impl Render for PowerMonitor<'_> {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        column()
-            .margin(4)
-            .padding(3)
-            .border(1)
-            .border_color(CYAN)
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.column()
+            .padding(8)
             .background(CANVAS)
-            .size(Size::new(312, 164))
-            .child(header(self.device))
-            .child(live_power(self.power).margin((0, 0, 2, 0)))
+            .size(Size::new(320, 172))
+            .child(header(cx))
+            .child(live_power(cx, self.power).margin((4, 0, 0, 0)))
             .child(
-                row()
-                    .margin((0, 0, 2, 0))
-                    .child(metric_card("VOLTAGE", self.voltage, CYAN).margin((0, 2, 0, 0)))
-                    .child(metric_card("CURRENT", self.current, GREEN).margin((0, 2, 0, 0)))
-                    .child(metric_card("POLL", "5 sec", AMBER)),
+                cx.row()
+                    .margin((4, 0, 0, 0))
+                    .child(metric_card(cx, "VOLTAGE", self.voltage).margin((0, 2, 0, 0)))
+                    .child(metric_card(cx, "CURRENT", self.current).margin((0, 2, 0, 0)))
+                    .child(metric_card(cx, "REFRESH", "5 SEC")),
             )
             .child(
-                row()
-                    .child(summary_card("ENERGY / RESET", self.energy, CYAN).margin((0, 2, 0, 0)))
-                    .child(summary_card("EST. COST", self.cost, AMBER)),
+                cx.row()
+                    .margin((4, 0, 0, 0))
+                    .child(summary_card(cx, "ENERGY / RESET", self.energy).margin((0, 2, 0, 0)))
+                    .child(summary_card(cx, "EST. COST", self.cost)),
             )
     }
 }
 
-fn header<'a>(device: &'a str) -> Row<'a> {
-    row()
-        .size(Size::new(304, 20))
+fn header(
+    cx: &Context<'_>,
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = RowStyle> {
+    cx.row()
+        .size(Size::new(304, 18))
         .child(
-            text(device)
-                .padding(1)
-                .size(Size::new(244, 20))
+            cx.text("SHELLY POWER")
+                .size(Size::new(238, 18))
                 .font(Font::mono(&FONT_9X18_BOLD))
                 .text_color(Rgb565::WHITE),
         )
         .child(
-            text("[ ON ]")
-                .padding(5)
-                .background(GREEN)
-                .size(Size::new(60, 20))
+            cx.text("ONLINE")
+                .padding((4, 12))
+                .background(ACCENT)
+                .size(Size::new(66, 18))
                 .font(Font::mono(&FONT_6X10))
                 .text_color(CANVAS),
         )
 }
 
-fn live_power<'a>(power: &'a str) -> Row<'a> {
-    row()
-        .background(PANEL_HIGHLIGHT)
-        .size(Size::new(304, 40))
+fn live_power(
+    cx: &Context<'_>,
+    power: &str,
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = RowStyle> {
+    cx.row()
+        .border((0, 0, 0, 2))
+        .border_color(ACCENT)
+        .background(PANEL_STRONG)
+        .size(Size::new(304, 44))
         .child(
-            text("LIVE LOAD")
-                .padding(15)
-                .size(Size::new(120, 40))
-                .font(Font::mono(&FONT_6X10))
-                .text_color(CYAN),
-        )
-        .child(
-            text(power)
-                .padding(10)
-                .background(CYAN)
-                .size(Size::new(184, 40))
-                .font(Font::mono(&FONT_10X20))
-                .text_color(CANVAS),
-        )
-}
-
-fn metric_card<'a>(label: &'a str, value: &'a str, accent: Rgb565) -> Column<'a> {
-    column()
-        .padding(3)
-        .border(1)
-        .border_color(accent)
-        .background(PANEL)
-        .size(Size::new(100, 46))
-        .child(
-            text(label)
-                .padding(2)
-                .size(Size::new(92, 14))
+            cx.text("LIVE LOAD")
+                .padding((17, 12))
+                .size(Size::new(108, 42))
                 .font(Font::mono(&FONT_6X10))
                 .text_color(MUTED),
         )
         .child(
-            text(value)
-                .padding(2)
-                .size(Size::new(92, 24))
+            cx.text(power)
+                .padding((11, 14))
+                .size(Size::new(196, 42))
                 .font(Font::mono(&FONT_10X20))
-                .text_color(accent),
+                .text_color(Rgb565::WHITE),
         )
 }
 
-fn summary_card<'a>(label: &'a str, value: &'a str, accent: Rgb565) -> Column<'a> {
-    column()
-        .padding(3)
+fn metric_card(
+    cx: &Context<'_>,
+    label: &str,
+    value: &str,
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = ColumnStyle> {
+    cx.column()
+        .padding((4, 6))
         .border(1)
-        .border_color(PANEL_HIGHLIGHT)
+        .border_color(EDGE)
         .background(PANEL)
-        .size(Size::new(151, 46))
+        .size(Size::new(100, 40))
         .child(
-            text(label)
-                .padding(2)
-                .size(Size::new(143, 14))
-                .font(Font::mono(&FONT_6X10))
-                .text_color(MUTED),
+            cx.text(label).size(Size::new(86, 12)).font(Font::mono(&FONT_6X10)).text_color(MUTED),
         )
         .child(
-            text(value)
-                .padding(2)
-                .size(Size::new(143, 24))
-                .font(Font::mono(&FONT_10X20))
-                .text_color(accent),
+            cx.text(value)
+                .size(Size::new(86, 18))
+                .font(Font::mono(&FONT_9X18_BOLD))
+                .text_color(Rgb565::WHITE),
+        )
+}
+
+fn summary_card(
+    cx: &Context<'_>,
+    label: &str,
+    value: &str,
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = ColumnStyle> {
+    cx.column()
+        .padding((4, 6))
+        .border(1)
+        .border_color(EDGE)
+        .background(PANEL)
+        .size(Size::new(151, 40))
+        .child(
+            cx.text(label).size(Size::new(137, 12)).font(Font::mono(&FONT_6X10)).text_color(MUTED),
+        )
+        .child(
+            cx.text(value)
+                .size(Size::new(137, 18))
+                .font(Font::mono(&FONT_9X18_BOLD))
+                .text_color(Rgb565::WHITE),
         )
 }
 
 fn main() {
     let display = SimulatorDisplay::<Rgb565>::new(Size::new(320, 172));
     let monitor = PowerMonitor {
-        device: "SHELLY // MINI RACK",
         power: "86.4 W",
         voltage: "232.1 V",
         current: "0.373 A",
         energy: "14.18 kWh",
-        cost: "EUR 1.84",
+        cost: "1.84 EUR",
     };
 
     let storage = FrameStorage::<Rgb565>::default();
@@ -158,10 +155,6 @@ fn main() {
     ui.render(&monitor).unwrap();
 
     let output_settings = OutputSettingsBuilder::new().scale(3).build();
-    if let Some(path) = env::args_os().nth(1) {
-        ui.display().to_rgb_output_image(&output_settings).save_png(path).unwrap();
-    } else {
-        let title = format!("Guillotine: {}", env!("CARGO_BIN_NAME"));
-        Window::new(&title, &output_settings).show_static(ui.display());
-    }
+    let title = format!("Guillotine: {}", env!("CARGO_BIN_NAME"));
+    Window::new(&title, &output_settings).show_static(ui.display());
 }
