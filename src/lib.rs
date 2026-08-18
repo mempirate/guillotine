@@ -167,7 +167,10 @@ where
         let mut tree = FrameTree::new(cx.storage.into_inner());
         tree.resolve(root, viewport);
 
-        self.display.clear(self.theme.background).map_err(RenderError::Draw)?;
+        // Conditionally clear the display if the root node needs it.
+        if tree.needs_clear(self.display.size()) {
+            self.display.clear(self.theme.background).map_err(RenderError::Draw)?;
+        }
 
         tree.draw(&mut self.display, &self.theme).map_err(RenderError::Draw)?;
 
@@ -385,6 +388,46 @@ mod tests {
             NodeKind::Text(text) => text.content(tree.storage.text),
             _ => panic!("expected a text node"),
         }
+    }
+
+    #[test]
+    fn transparent_root_requires_clear() {
+        let viewport = Size::new(20, 20);
+        let mut storage = FrameStorage::<Rgb565, 1, 1>::default();
+        let cx = Context::new(storage.view());
+        let root = cx.column().size(viewport).try_build().unwrap();
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+
+        tree.resolve(root, Constraints::max(viewport));
+
+        assert!(tree.needs_clear(viewport));
+    }
+
+    #[test]
+    fn partial_opaque_root_requires_clear() {
+        let viewport = Size::new(20, 20);
+        let mut storage = FrameStorage::<Rgb565, 1, 1>::default();
+        let cx = Context::new(storage.view());
+        let root =
+            cx.column().background(Rgb565::BLACK).size(Size::new(10, 20)).try_build().unwrap();
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+
+        tree.resolve(root, Constraints::max(viewport));
+
+        assert!(tree.needs_clear(viewport));
+    }
+
+    #[test]
+    fn full_viewport_opaque_root_does_not_require_clear() {
+        let viewport = Size::new(20, 20);
+        let mut storage = FrameStorage::<Rgb565, 1, 1>::default();
+        let cx = Context::new(storage.view());
+        let root = cx.column().background(Rgb565::BLACK).size(viewport).try_build().unwrap();
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+
+        tree.resolve(root, Constraints::max(viewport));
+
+        assert!(!tree.needs_clear(viewport));
     }
 
     #[test]

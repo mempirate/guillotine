@@ -25,6 +25,15 @@ impl<C: PixelColor> NodeKind<C> {
             _ => unimplemented!("text drawing uses a different code path"),
         }
     }
+
+    /// Returns whether the node has a background color, i.e. is not transparent.
+    pub(crate) const fn has_background(&self) -> bool {
+        match self {
+            Self::Row(style) => style.background.is_some(),
+            Self::Column(style) => style.background.is_some(),
+            Self::Text(text) => text.style.background.is_some(),
+        }
+    }
 }
 
 impl<C: PixelColor> TextNode<C> {

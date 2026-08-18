@@ -4,6 +4,7 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::PixelColor,
+    primitives::Rectangle,
 };
 
 use crate::{
@@ -110,6 +111,28 @@ where
         };
 
         self.draw_node(root, Point::zero(), display, theme)
+    }
+
+    /// Returns whether the display must be cleared before drawing the frame.
+    ///
+    /// Clearing can be skipped only when the root node paints a background across the entire
+    /// viewport. An empty tree, a transparent root, or a root that leaves any part of the viewport
+    /// uncovered requires a clear to remove pixels from the previous frame.
+    pub(crate) fn needs_clear(&self, viewport: Size) -> bool {
+        let Some(root) = self.root else {
+            return true;
+        };
+
+        let root = self.node(root);
+
+        if !root.kind.has_background() {
+            return true;
+        }
+
+        let root_bounds = root.layout.resolve(Point::zero()).border;
+        let viewport = Rectangle::new(Point::zero(), viewport);
+
+        root_bounds.intersection(&viewport) != viewport
     }
 
     fn draw_node<D>(
