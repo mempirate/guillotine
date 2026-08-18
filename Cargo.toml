@@ -1,6 +1,6 @@
 [package]
 name = "guillotine"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 description = "A no_std graphical user interface framework in Rust for embedded devices prioritizing resource efficiency and ergonomics."
 repository = "https://github.com/mempirate/guillotine"
