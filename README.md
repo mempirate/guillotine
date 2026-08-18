@@ -52,7 +52,9 @@ fn main() {
         greeting: "Hello world!"
     };
 
-    let storage = FrameStorage::<Rgb565>::default();
+    // Initialize stack-based storage for the frame. Capacity: 128 elements
+    // and 128 bytes of UTF-8 text.
+    let storage = FrameStorage::<Rgb565, 32, 128>::default();
     let mut ui = Ui::new(display, storage);
 
     // Render the view
@@ -174,13 +176,47 @@ columns add together.
 `Style::size` is the border-box size: padding and border are placed inside it, and margin is added
 outside it. The box grows to contain its padding and border when parent constraints allow.
 
-### Examples
+## Memory Management
 
-To run the examples, you need to enable the `simulator` feature. This pulls in a bundled [sdl2](https://github.com/Rust-SDL2/rust-sdl2) for opening windows. You will need cmake to compile it.
+Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) for static memory allocation.
+
+This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
+signature looks like this:
+```rust,ignore
+pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024>
+```
+
+Since `heapless` stores
+data inline, capacity has to be specified upfront through const generics. `FrameStorage` contains 2 buffers:
+1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
+2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
+
+Since `FrameStorage` allocates statically, it's recommended to tune `N` and `T` to fit the specifics
+of your UI. `FrameStorage` exposes some methods to help you do that:
+- `usage()` returns the used length of both buffers.
+- `capacity()` returns the capacity of both buffers.
+
+> [!NOTE]
+> These buffers are only populated *after* calls to `render()`, and will contain the element tree and
+> text bytes for the currently rendered frame.
+
+## Examples
+
+To run the [examples](./examples), you need to enable the `simulator` feature. This pulls in a bundled [sdl2](https://github.com/Rust-SDL2/rust-sdl2) for opening windows. You will need cmake to compile it.
 
 ```sh
 cargo run --example power_monitor --features simulator
 ```
+
+## Why?
+
+I was trying to build a clean-looking dashboard on a small LCD screen powered by an ESP32-C6, that's supposed to monitor and display the power consumption of my home lab (project [here](https://github.com/mempirate/shellyctl)). I wanted to do this in Rust, with the esp-rs ecosystem. The ecosystem is quite mature, but I couldn't really find a UI framework that was:
+1. Performant
+2. Very low memory footprint (no Slint / LVGL)
+3. Beautiful
+
+Additionally, I wanted to learn what it would take to build something like this.
+
 
 ## Roadmap
 
@@ -207,24 +243,18 @@ cargo run --example power_monitor --features simulator
   - [x] Column
 
 ### v0.1.0
+- [x] No alloc
+  
+### v0.2.0
 - [ ] Add memory usage for examples
   - cargo binutils for examples in CI (cargo size). This will detect regressions.
-- [x] No alloc
 - [ ] Documentation
   - [ ] Guide for finding the ideal `FrameStorage` capacity.
-- [ ] Benchmarks for Frame building
+- [ ] Benchmarks for:
+  - [ ] Frame rendering
+  - [ ] Frame drawing
 - [ ] Container gaps (flex from CSS)
-- [ ] Custom render modes feature: `incremental`. Turned on by default. Will use more memory to manage tree in between frames.
-- [ ] Define inremental redrawing triggers / states:
-```rs
-enum DrawState {
-    Clean,
-    Paint,     // same geometry; repaint old/current bounds
-    Layout,    // size or position changed
-    Structure, // child added, removed, moved, or keyed differently
-    Full,      // theme, rotation, display reset, etc.
-}
-```
+- [ ] Incremental drawing behind an `inremental` feature
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
@@ -235,19 +265,10 @@ enum DrawState {
 - [ ] `profile` feature with `defmt` logs
 - [ ] Custom elements
 - [ ] Alignment
-- [ ] Support for interaction
+- [ ] Support for interaction behind an `interaction` feature
 - [ ] Support interactive elements:
   - [ ] Button
   - [ ] Slider
-
-## Why?
-
-I was trying to build a clean-looking dashboard on a small LCD screen powered by an ESP32-C6, that's supposed to monitor and display the power consumption of my home lab (project [here](https://github.com/mempirate/shellyctl)). I wanted to do this in Rust, with the esp-rs ecosystem. The ecosystem is quite mature, but I couldn't really find a UI framework that was:
-1. Performant
-2. Very low memory footprint (no Slint / LVGL)
-3. Beautiful
-
-Additionally, I wanted to learn what it would take to build something like this.
 
 ## Prior Work & Inspiration
 - [Clay by Nic Barker](https://github.com/nicbarker/clay#retained-mode-rendering)
