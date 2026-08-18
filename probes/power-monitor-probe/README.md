@@ -28,6 +28,10 @@ member, or collaborator can comment `/probe` on a pull request. CI builds both t
 base revisions, posts a byte-level comparison, and retains the JSON, symbol report, and head ELF as
 a workflow artifact for 30 days.
 
+The workflow can also be started from the Actions UI with **Run workflow**. A manual run measures
+the selected revision against its first parent, writes the comparison to the workflow summary, and
+uploads the artifact without posting a pull-request comment.
+
 This project was initially scaffolded with `esp-generate 1.3.0`:
 
 ```sh
