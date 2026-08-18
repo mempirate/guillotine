@@ -9,7 +9,7 @@ categories = ["embedded", "no-std"]
 keywords = ["embedded", "gui", "graphics", "no_std", "embedded-graphics"]
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-exclude = ["/.github", "/rust-toolchain.toml", "/rustfmt.toml"]
+exclude = ["/.github", "/rust-toolchain.toml", "/rustfmt.toml", "/probes"]
 rust-version = "1.87"
 publish = ["crates-io"]
 
