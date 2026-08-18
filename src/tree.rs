@@ -1,18 +1,14 @@
 //! Frame tree.
 
 use embedded_graphics::{
-    Drawable as _,
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    mono_font::MonoTextStyleBuilder,
     pixelcolor::PixelColor,
-    text::{Baseline, Text as GraphicsText},
 };
 
 use crate::{
-    ColumnStyle, Font, RowStyle, StorageView, Style, TextStyle, Theme,
+    ColumnStyle, RowStyle, StorageView, Style, TextStyle, Theme,
     common::{NodeIndex, SizeExt as _, TextRange, to_i32},
-    element::draw_box,
     layout::{BoxLayout, Constraints, Layout},
     style::BoxStyle,
 };
@@ -66,7 +62,7 @@ impl<C: PixelColor> Node<C> {
     }
 
     /// Sets the index of the next sibling node.
-    pub(crate) fn set_sibling(&mut self, sibling: NodeIndex) {
+    pub(crate) const fn set_sibling(&mut self, sibling: NodeIndex) {
         self.sibling = Some(sibling);
     }
 }
@@ -278,17 +274,6 @@ impl<C: PixelColor> NodeKind<C> {
             Self::Text(text) => text.style.box_style(),
         }
     }
-
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        match self {
-            Self::Row(style) => draw_box(style, layout, display),
-            Self::Column(style) => draw_box(style, layout, display),
-            _ => unimplemented!("text drawing uses a different code path"),
-        }
-    }
 }
 
 pub(crate) struct TextNode<C> {
@@ -303,37 +288,5 @@ impl<C: PixelColor> TextNode<C> {
         let end = self.range.offset + self.range.len;
 
         unsafe { core::str::from_utf8_unchecked(&storage[self.range.offset..end]) }
-    }
-
-    #[inline]
-    pub(crate) fn draw<D>(
-        &self,
-        content: &str,
-        layout: &BoxLayout,
-        display: &mut D,
-        theme: &Theme<C>,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        draw_box(&self.style, layout, display)?;
-
-        match self.style.font {
-            Font::Mono(font) => {
-                let character_style = MonoTextStyleBuilder::new()
-                    .font(font)
-                    .text_color(self.style.color.unwrap_or(theme.foreground))
-                    .build();
-
-                GraphicsText::with_baseline(
-                    content,
-                    layout.content.top_left,
-                    character_style,
-                    Baseline::Top,
-                )
-                .draw(display)?;
-            }
-        }
-        Ok(())
     }
 }

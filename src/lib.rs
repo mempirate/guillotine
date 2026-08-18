@@ -3,6 +3,7 @@
 #![doc = include_str!("../README.md")]
 
 mod common;
+mod draw;
 mod element;
 mod layout;
 pub mod style;
