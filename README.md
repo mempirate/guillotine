@@ -33,26 +33,27 @@ struct BasicView {
 
 impl Render for BasicView {
     // Render lets you declaratively build your UI tree.
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        column()
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.column()
             .padding(10)
             .margin(10)
             .border(2)
             .border_color(Rgb565::BLUE)
-            .child(text(self.greeting).background(Rgb565::RED).margin(5))
-            .child(text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
+            .child(cx.text(self.greeting).background(Rgb565::RED).margin(5))
+            .child(cx.text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
     }
 }
 
 fn main() {
     // Display should implement embedded_graphics DrawTarget
-    let display = MockDisplay::new();
+    let display = MockDisplay::<Rgb565>::new();
 
     let view = BasicView {
         greeting: "Hello world!"
     };
 
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Rgb565>::default();
+    let mut ui = Ui::new(display, storage);
 
     // Render the view
     ui.render(&view);
@@ -88,8 +89,6 @@ Status: implemented ✅
 ## API
 
 ```rust,no_run
-extern crate alloc;
-
 use embedded_graphics::{prelude::*, mock_display::MockDisplay, pixelcolor::Rgb565};
 
 use guillotine::*;
@@ -100,34 +99,35 @@ struct Home {
 }
 
 impl Render for Home {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        row()
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.row()
             .bg(Rgb565::RED)
-            .child(text(self.header))
-            .when(self.show_button, |row| row.child(text("Click me")))
-            .children([text("Copyright"), text("ACME Corp")])
+            .child(cx.text(self.header))
+            .when(self.show_button, |row| row.child(cx.text("Click me")))
+            .children([cx.text("Copyright"), cx.text("ACME Corp")])
     }
 }
 
 struct Page {
-    power: f32,
-    current: f32,
-    voltage: f32,
+    power: &'static str,
+    current: &'static str,
+    voltage: &'static str,
 }
 
 impl Render for Page {
-    fn render<'a>(&'a self, _cx: &mut Context) -> impl IntoElement<Element = Element<'a>> {
-        column()
-            .child(text(alloc::format!("Power: {}", self.power)))
-            .child(text(alloc::format!("Current: {}", self.current)))
-            .child(text(alloc::format!("Voltage: {}", self.voltage)))
+    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+        cx.column()
+            .child(cx.text(self.power))
+            .child(cx.text(self.current))
+            .child(cx.text(self.voltage))
     }
 }
 
 fn main() {
-    let display = MockDisplay::new();
+    let display = MockDisplay::<Rgb565>::new();
 
-    let mut ui = Ui::new(display);
+    let storage = FrameStorage::<Rgb565>::default();
+    let mut ui = Ui::new(display, storage);
 
     let mut home = Home {
         show_button: false,
@@ -140,10 +140,10 @@ fn main() {
 
     ui.render(&home).unwrap();
 
-    let mut page = Page { 
-        power: 50.0,
-        voltage: 230.0,
-        current: 0.2173
+    let page = Page {
+        power: "Power: 50.0 W",
+        voltage: "Voltage: 230.0 V",
+        current: "Current: 0.2173 A",
     };
 
     ui.render(&page);
@@ -159,7 +159,7 @@ constructors and style methods infer it. See the [binary-color example](examples
 Margin, padding, and border widths accept CSS-like physical-edge shorthands:
 
 ```rust,ignore
-column()
+cx.column()
     .margin(10)                 // all edges
     .padding((4, 8))            // vertical, horizontal
     .border((1, 2, 3))          // top, horizontal, bottom
@@ -191,8 +191,8 @@ cargo run --example power_monitor --features simulator
 - [x] Full immediate mode redrawing
 - [ ] Make repo ready for publishing:
   - [ ] README documentation (a la Dioxus)
-  - [ ] Rustdoc documentation
-  - [ ] Examples
+  - [x] Rustdoc documentation
+  - [x] Examples
     - Sizing (insets)
     - Fonts
     - Cool
@@ -200,7 +200,6 @@ cargo run --example power_monitor --features simulator
   - [x] Fix exports
   - [x] Dual Apache / MIT license
   - [x] Fix sdl2 vendoring for embedded-graphics-simulator
-- [ ] Benchmarks for Frame building
 - [x] `TextStyle` fonts
 - [x] Support for non-interactive elements:
   - [x] Row
@@ -210,7 +209,8 @@ cargo run --example power_monitor --features simulator
 ### v0.1.0
 - [ ] Add memory usage for examples
   - cargo binutils for examples in CI (cargo size). This will detect regressions.
-- [ ] No alloc
+- [x] No alloc
+- [ ] Benchmarks for Frame building
 - [ ] Container gaps (flex from CSS)
 - [ ] Custom render modes feature: `incremental`. Turned on by default. Will use more memory to manage tree in between frames.
 - [ ] Define inremental redrawing triggers / states:

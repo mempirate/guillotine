@@ -7,29 +7,36 @@ mod layout;
 pub mod style;
 mod theme;
 
-extern crate alloc;
-
-use alloc::vec::Vec;
 use embedded_graphics::{
+    mono_font::MonoTextStyleBuilder,
     pixelcolor::Rgb565,
-    prelude::{DrawTarget, OriginDimensions, PixelColor, Point, Size},
+    prelude::{DrawTarget, Drawable as _, OriginDimensions, PixelColor, Point, Size},
+    text::{Baseline, Text as GraphicsText},
 };
 
 pub use element::{
-    Column, ColumnStyle, Element, Font, IntoElement, ParentElement, Row, RowStyle, Text, TextStyle,
-    TextStyledElement, column, row, text,
+    BuildError, ColumnStyle, ElementBuilder, Font, ParentElement, RowStyle, TextStyle,
+    TextStyledElement,
 };
 use heapless::VecView;
 pub use style::{Insets, Style, StyledElement};
 pub use theme::Theme;
 
-use crate::layout::{Constraints, Layout};
+use crate::{
+    element::draw_box,
+    layout::{BoxLayout, Constraints, Layout},
+    style::BoxStyle,
+};
 
 /// Storage backed by [`heapless::Vec`] that holds frame data for rendering. Capacity is fixed at
 /// `N` items.
 #[derive(Default)]
-pub struct FrameStorage<C: PixelColor, const N: usize, const T: usize> {
+pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024> {
     nodes: heapless::Vec<Node<C>, N>,
+    /// A buffer for UTF-8 encoded text content. The reason we don't store this inside
+    /// of [`Node`] ([`TextNode`]) is to reduce memory usage. Since [`Node`] is a fixed-size
+    /// struct, storing text with capacity `N` bytes would carry over to all [`Node`] instances,
+    /// even if they don't contain text.
     text: heapless::Vec<u8, T>,
 }
 
@@ -64,6 +71,18 @@ where
     theme: Theme<D::Color>,
 }
 
+/// An error encountered while building or drawing a frame.
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum RenderError<E> {
+    /// Building the frame exceeded one of its fixed-capacity arenas.
+    #[error(transparent)]
+    Build(#[from] BuildError),
+    /// The display returned an error while clearing or drawing the frame.
+    #[error("display drawing failed")]
+    Draw(E),
+}
+
 impl<D, const N: usize, const T: usize> Ui<D, N, T>
 where
     D: DrawTarget + OriginDimensions,
@@ -94,27 +113,29 @@ where
     }
 
     /// Renders the given `view` onto the display.
-    pub fn render<V>(&mut self, view: &V) -> Result<(), D::Error>
+    pub fn render<V>(&mut self, view: &V) -> Result<(), RenderError<D::Error>>
     where
         V: Render<D::Color>,
     {
         self.storage.clear();
 
         let frame = self.storage.view();
-        let mut cx = Context::new(frame);
+        let cx = Context::new(frame);
 
-        let root = view.render(&mut cx).into_element();
+        let root = view.render(&cx).try_build()?;
 
         // Create the viewport constraints.
         let viewport = Constraints::max(self.display.size());
 
-        // Resolve the root node and build the tree.
-        let mut tree = FrameTree::new();
-        let _ = tree.resolve(root, viewport);
+        // Build and resolve the frame tree.
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+        tree.resolve(root, viewport);
 
-        self.display.clear(self.theme.background)?;
+        self.display.clear(self.theme.background).map_err(|e| RenderError::Draw(e))?;
 
-        tree.draw(&mut self.display, &self.theme)
+        tree.draw(&mut self.display, &self.theme).map_err(|e| RenderError::Draw(e))?;
+
+        Ok(())
     }
 
     /// Returns a reference to the display.
@@ -163,45 +184,45 @@ enum Axis {
 ///   constraints (`inner_constraints`) and push them down to the children.
 /// - Once the leafs are resolved, push sizes back up the tree. For container elements, also
 ///   calculate relative offsets for each child.
-struct FrameTree<C>
+struct FrameTree<'frame, C>
 where
     C: PixelColor,
 {
-    nodes: Vec<Node<C>>,
     root: Option<NodeIndex>,
+    storage: StorageView<'frame, C>,
 }
 
-impl<C> FrameTree<C>
+impl<'frame, C> FrameTree<'frame, C>
 where
     C: PixelColor,
 {
-    /// Creates a new, empty frame tree.
-    const fn new() -> Self {
-        Self { nodes: Vec::new(), root: None }
-    }
-
-    /// Inserts a new node into the frame tree and returns its index.
-    fn insert(&mut self, node: Node<C>) -> NodeIndex {
-        let index = self.nodes.len();
-        self.nodes.push(node);
-        index
+    /// Creates a new (unresolved) frame tree from the given storage.
+    const fn new(storage: StorageView<'frame, C>) -> Self {
+        Self { root: None, storage }
     }
 
     /// Returns the number of nodes in the frame tree.
     #[allow(unused)]
-    const fn len(&self) -> usize {
-        self.nodes.len()
+    fn len(&self) -> usize {
+        self.storage.nodes.len()
     }
 
-    /// Resolves the root of the frame tree with the given element and constraints.
-    pub(crate) fn resolve<'a>(
-        &mut self,
-        root: Element<'a, C>,
-        constraints: Constraints,
-    ) -> NodeIndex {
-        let root = resolve(self, root, constraints, None);
+    /// Returns a reference to the node at the given index.
+    #[inline]
+    fn node(&self, index: NodeIndex) -> &Node<C> {
+        &self.storage.nodes[index]
+    }
+
+    /// Returns a mutable reference to the node at the given index.
+    #[inline]
+    fn node_mut(&mut self, index: NodeIndex) -> &mut Node<C> {
+        &mut self.storage.nodes[index]
+    }
+
+    /// Resolves the tree: lays out the root node and its children recursively.
+    pub(crate) fn resolve(&mut self, root: NodeIndex, constraints: Constraints) {
         self.root = Some(root);
-        root
+        self.layout_node(root, constraints);
     }
 
     /// Draws the frame tree onto the given display, starting with `root` at `offset`.
@@ -226,16 +247,23 @@ where
     where
         D: DrawTarget<Color = C>,
     {
-        let node = &mut self.nodes[index];
+        let node = self.node(index);
         let layout = node.layout.resolve(parent_origin);
 
-        node.element.draw(&layout, display, theme)?;
+        if let NodeKind::Text(text) = &node.kind {
+            // Extract the content of the text node.
+            let content = text.content(&self.storage.text);
+
+            text.draw(content, &layout, display, theme)?;
+        } else {
+            node.draw(&layout, display)?;
+        }
 
         let mut child = node.child;
 
         while let Some(index) = child {
             self.draw_node(index, layout.content.top_left, display, theme)?;
-            child = self.nodes[index].sibling;
+            child = self.node(index).sibling;
         }
 
         Ok(())
@@ -244,7 +272,7 @@ where
     // TODO: Clean up
     fn layout_node(&mut self, index: NodeIndex, constraints: Constraints) {
         // Extract the common box style properties.
-        let box_style = self.nodes[index].element.box_style();
+        let box_style = self.node(index).box_style();
 
         let border_constraints = box_style.border_constraints(constraints);
 
@@ -258,13 +286,10 @@ where
             Leaf(Size),
         }
 
-        let content_layout = match &self.nodes[index].element {
-            Element::Column(_) => ContentLayout::Container(Axis::Vertical),
-            Element::Row(_) => ContentLayout::Container(Axis::Horizontal),
-            Element::Text(text) => {
-                ContentLayout::Leaf(content_constraints.constrain(text.measure()))
-            }
-            Element::Custom(never) => match *never {},
+        let content_layout = match &self.node(index).kind {
+            NodeKind::Column(_) => ContentLayout::Container(Axis::Vertical),
+            NodeKind::Row(_) => ContentLayout::Container(Axis::Horizontal),
+            NodeKind::Text(text) => ContentLayout::Leaf(content_constraints.constrain(text.size)),
         };
 
         let intrinsic_content_size = match content_layout {
@@ -299,7 +324,7 @@ where
 
         let content_offset = box_style.margin.saturating_add(content_insets);
 
-        self.nodes[index].layout = Layout {
+        self.node_mut(index).layout = Layout {
             // The parent assigns this later. The root remains at zero.
             offset: Point::new(0, 0),
 
@@ -323,10 +348,12 @@ where
         let mut cross_size: u32 = 0;
 
         // Get the optional child.
-        let mut child = self.nodes[index].child;
+        let mut child = self.node(index).child;
 
         while let Some(child_idx) = child {
-            let size = self.nodes[child_idx].layout.outer_size;
+            self.layout_node(child_idx, constraints);
+
+            let size = self.node(child_idx).layout.outer_size;
 
             let main_offset = i32::try_from(main_size).unwrap_or(i32::MAX);
 
@@ -335,7 +362,8 @@ where
                 Axis::Horizontal => Point::new(main_offset, 0),
                 Axis::Vertical => Point::new(0, main_offset),
             };
-            self.nodes[child_idx].layout.set_offset(offset);
+
+            self.node_mut(child_idx).layout.set_offset(offset);
 
             let (child_main_size, child_cross_size) = match axis {
                 Axis::Horizontal => (size.width, size.height),
@@ -345,7 +373,7 @@ where
             main_size = main_size.saturating_add(child_main_size);
             cross_size = cross_size.max(child_cross_size);
 
-            child = self.nodes[child_idx].sibling;
+            child = self.node(child_idx).sibling;
         }
 
         let intrinsic_size = match axis {
@@ -379,58 +407,78 @@ const fn to_i32(value: u32) -> i32 {
     if value > i32::MAX as u32 { i32::MAX } else { value as i32 }
 }
 
-/// Recursively populates the frame tree with the given element and parent node.
-fn resolve<'a, C>(
-    tree: &mut FrameTree<C>,
-    mut element: Element<'a, C>,
-    constraints: Constraints,
-    parent: Option<NodeIndex>,
-) -> NodeIndex
-where
-    C: PixelColor,
-{
-    // Calculate the content constraints for the current element. These are effectively the
-    // constraints that will be pushed down to the children.
-    let content_constraints = element.box_style().content_constraints(constraints);
-
-    let children = element.take_children().unwrap_or_default();
-
-    // Insert the parent node into the tree. Not every field can be fully populated yet.
-    let index =
-        tree.insert(Node { element, layout: Layout::empty(), parent, child: None, sibling: None });
-
-    let mut previous_child: Option<NodeIndex> = None;
-
-    for child in children {
-        let child = resolve(tree, child, content_constraints, Some(index));
-
-        // If there is a previous child, set its sibling to the current child.
-        // Otherwise, set the child of the parent node to the current child (as this is the first
-        // child).
-        if let Some(prev) = previous_child {
-            tree.nodes[prev].sibling = Some(child);
-        } else {
-            tree.nodes[index].child = Some(child);
-        }
-
-        previous_child = Some(child);
-    }
-
-    tree.layout_node(index, constraints);
-
-    index
-}
-
 enum NodeKind<C> {
     Row(Style<RowStyle, C>),
     Column(Style<ColumnStyle, C>),
     Text(TextNode<C>),
 }
 
+impl<C: PixelColor> NodeKind<C> {
+    pub(crate) fn box_style(&self) -> BoxStyle {
+        match self {
+            NodeKind::Row(style) => style.box_style(),
+            NodeKind::Column(style) => style.box_style(),
+            NodeKind::Text(text) => text.style.box_style(),
+        }
+    }
+
+    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = C>,
+    {
+        match self {
+            NodeKind::Row(style) => draw_box(style, layout, display),
+            NodeKind::Column(style) => draw_box(style, layout, display),
+            _ => unimplemented!("text drawing uses a different code path"),
+        }
+    }
+}
+
 struct TextNode<C> {
-    offset: u16,
-    len: u16,
-    style: Style<TextStyle, C>,
+    range: TextRange,
+    size: Size,
+    style: Style<TextStyle<C>, C>,
+}
+
+impl<C: PixelColor> TextNode<C> {
+    /// Extracts the content of this text node as a `&str` slice.
+    pub(crate) fn content<'a>(&self, storage: &'a [u8]) -> &'a str {
+        let end = self.range.offset + self.range.len;
+
+        unsafe { core::str::from_utf8_unchecked(&storage[self.range.offset..end]) }
+    }
+
+    #[inline]
+    pub(crate) fn draw<D>(
+        &self,
+        content: &str,
+        layout: &BoxLayout,
+        display: &mut D,
+        theme: &Theme<C>,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = C>,
+    {
+        draw_box(&self.style, layout, display)?;
+
+        match self.style.font {
+            Font::Mono(font) => {
+                let character_style = MonoTextStyleBuilder::new()
+                    .font(font)
+                    .text_color(self.style.color.unwrap_or(theme.foreground))
+                    .build();
+
+                GraphicsText::with_baseline(
+                    content,
+                    layout.content.top_left,
+                    character_style,
+                    Baseline::Top,
+                )
+                .draw(display)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A node in a [`FrameTree`].
@@ -443,13 +491,23 @@ where
     /// The layout of this node.
     layout: Layout,
 
-    /// Index of the parent node, if any.
-    #[allow(unused)]
-    parent: Option<NodeIndex>,
     /// Index of the first child node, if any.
     child: Option<NodeIndex>,
     /// Index of the next sibling node, if any.
     sibling: Option<NodeIndex>,
+}
+
+impl<C: PixelColor> Node<C> {
+    pub(crate) fn box_style(&self) -> BoxStyle {
+        self.kind.box_style()
+    }
+
+    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = C>,
+    {
+        self.kind.draw(layout, display)
+    }
 }
 
 /// A helper trait for building complex objects with imperative conditionals in a fluent style.
@@ -500,7 +558,7 @@ pub trait FluentBuilder {
 }
 
 // Transparent implementation of FluentBuilder for all IntoElement types.
-impl<T: IntoElement> FluentBuilder for T {}
+impl<T: ElementBuilder> FluentBuilder for T {}
 
 /// The [`Render`] trait is implemented by types that can be rendered into an [`Element`]. Use this
 /// trait to define UI elements.
@@ -514,7 +572,7 @@ where
     C: PixelColor,
 {
     /// Renders this element into an [`Element`] using the given [`Context`].
-    fn render<'a>(&'a self, cx: &mut Context<'a, C>) -> impl IntoElement<Element = Element<'a, C>>;
+    fn render(&self, cx: &Context<'_, C>) -> impl ElementBuilder;
 }
 
 /// For now, unused. In the future, will be used for context management, such as:
@@ -524,10 +582,54 @@ pub struct Context<'frame, C: PixelColor = Rgb565> {
     storage: core::cell::RefCell<StorageView<'frame, C>>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct TextRange {
+    pub offset: usize,
+    pub len: usize,
+}
+
 impl<'frame, C: PixelColor> Context<'frame, C> {
     /// Creates a new [`Context`] with the given [`FrameStorage`].
     fn new(storage: StorageView<'frame, C>) -> Self {
         Self { storage: core::cell::RefCell::new(storage) }
+    }
+
+    /// Links the sibling nodes of the given indices (i.e., sets the `sibling` field of the previous
+    /// node to the next node's index)
+    fn link_sibling(&self, node: NodeIndex, sibling: NodeIndex) {
+        let mut storage = self.storage.borrow_mut();
+
+        storage.nodes[node].sibling = Some(sibling);
+    }
+
+    /// Inserts a node into the storage, returning its index.
+    /// Returns `None` if storage is full.
+    fn insert(&self, node: Node<C>) -> Result<NodeIndex, BuildError> {
+        // TODO: Handle text nodes.
+        let mut storage = self.storage.borrow_mut();
+        let index = storage.nodes.len();
+        storage.nodes.push(node).map_err(|_| BuildError::NodeCapacity)?;
+
+        Ok(index)
+    }
+
+    /// Stores the given text content in the storage, returning a [`TextRange`] that can be used to
+    /// retrieve the text later.
+    fn store_text(&self, content: &str) -> Result<TextRange, BuildError> {
+        let mut storage = self.storage.borrow_mut();
+
+        let offset = storage.text.len();
+        let len = content.len();
+        let end = offset.checked_add(len).ok_or(BuildError::TextCapacity)?;
+
+        if end > storage.text.capacity() {
+            return Err(BuildError::TextCapacity);
+        }
+
+        // Store the content as UTF-8 bytes.
+        storage.text.extend_from_slice(content.as_bytes()).map_err(|_| BuildError::TextCapacity)?;
+
+        Ok(TextRange { offset, len })
     }
 }
 
@@ -547,88 +649,127 @@ mod tests {
     }
 
     impl Render for Dashboard {
-        fn render<'a>(&'a self, _cx: &mut Context<'a>) -> impl IntoElement<Element = Element<'a>> {
-            row()
-                .child(text(self.text))
-                .child(row().child(text("Nested")))
-                .when(true, |row| row.child(text("Conditional")))
-                .children([text("Copyright"), text("ACME Corp")])
+        fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
+            cx.row()
+                .child(cx.text(self.text))
+                .child(cx.row().child(cx.text("Nested")))
+                .when(true, |row| row.child(cx.text("Conditional")))
+                .children([cx.text("Copyright"), cx.text("ACME Corp")])
+        }
+    }
+
+    fn child_count<C: PixelColor>(tree: &FrameTree<'_, C>, parent: NodeIndex) -> usize {
+        let mut count = 0;
+        let mut child = tree.node(parent).child;
+
+        while let Some(index) = child {
+            count += 1;
+            child = tree.node(index).sibling;
+        }
+
+        count
+    }
+
+    fn nth_child<C: PixelColor>(
+        tree: &FrameTree<'_, C>,
+        parent: NodeIndex,
+        position: usize,
+    ) -> Option<NodeIndex> {
+        let mut child = tree.node(parent).child;
+
+        for _ in 0..position {
+            child = child.and_then(|index| tree.node(index).sibling);
+        }
+
+        child
+    }
+
+    fn text_content<'a, C: PixelColor>(tree: &'a FrameTree<'_, C>, index: NodeIndex) -> &'a str {
+        match &tree.node(index).kind {
+            NodeKind::Text(text) => text.content(&tree.storage.text),
+            _ => panic!("expected a text node"),
         }
     }
 
     #[test]
     fn row_composes_heterogeneous_and_conditional_children() {
         let dashboard = Dashboard { text: "Hello, World!" };
+        let mut storage = FrameStorage::<Rgb565, 10, 64>::default();
+        let cx = Context::new(storage.view());
 
-        let mut storage = FrameStorage::<_, 10, 10>::default();
-        let element = dashboard.render(&mut Context::new(storage.view())).into_element();
+        let root = dashboard.render(&cx).try_build().unwrap();
+        let tree = FrameTree::new(cx.storage.into_inner());
 
-        let Element::Row(row) = element else {
-            panic!("expected a row");
-        };
+        assert!(matches!(tree.node(root).kind, NodeKind::Row(_)));
+        assert_eq!(child_count(&tree, root), 5);
 
-        assert_eq!(row.children.len(), 5);
-        assert!(matches!(
-            &row.children[2],
-            Element::Text(text) if text.content() == "Conditional"
-        ));
+        let nested = nth_child(&tree, root, 1).unwrap();
+        assert!(matches!(tree.node(nested).kind, NodeKind::Row(_)));
+
+        let conditional = nth_child(&tree, root, 2).unwrap();
+        assert_eq!(text_content(&tree, conditional), "Conditional");
     }
 
     #[test]
     fn column_composes_heterogeneous_and_conditional_children() {
-        let element: Element<'_> = column()
-            .child(text("First"))
-            .child(row().child(text("Nested")))
-            .when(true, |column| column.child(text("Conditional")))
-            .children([text("Fourth"), text("Fifth")])
-            .into_element();
+        let mut storage = FrameStorage::<Rgb565, 10, 64>::default();
+        let cx = Context::new(storage.view());
 
-        let Element::Column(column) = element else {
-            panic!("expected a column");
-        };
+        let root = cx
+            .column()
+            .child(cx.text("First"))
+            .child(cx.row().child(cx.text("Nested")))
+            .when(true, |column| column.child(cx.text("Conditional")))
+            .children([cx.text("Fourth"), cx.text("Fifth")])
+            .try_build()
+            .unwrap();
+        let tree = FrameTree::new(cx.storage.into_inner());
 
-        assert_eq!(column.children.len(), 5);
-        assert!(matches!(&column.children[1], Element::Row(_)));
-        assert!(matches!(
-            &column.children[2],
-            Element::Text(text) if text.content() == "Conditional"
-        ));
+        assert!(matches!(tree.node(root).kind, NodeKind::Column(_)));
+        assert_eq!(child_count(&tree, root), 5);
+
+        let nested = nth_child(&tree, root, 1).unwrap();
+        assert!(matches!(tree.node(nested).kind, NodeKind::Row(_)));
+
+        let conditional = nth_child(&tree, root, 2).unwrap();
+        assert_eq!(text_content(&tree, conditional), "Conditional");
     }
 
     #[test]
     fn column_stacks_children_vertically_and_uses_the_widest_child() {
-        fn sized_text(content: &str, size: Size) -> Text<'_> {
-            text(content).with_style(Style { size: Some(size), ..Style::default() })
-        }
+        let mut storage = FrameStorage::<Rgb565, 8, 8>::default();
+        let cx = Context::new(storage.view());
 
-        let element = column()
+        let root = cx
+            .column()
             .child(
-                row()
-                    .child(sized_text("a", Size::new(10, 5)))
-                    .child(sized_text("b", Size::new(20, 7))),
+                cx.row()
+                    .child(cx.text("a").size(Size::new(10, 5)))
+                    .child(cx.text("b").size(Size::new(20, 7))),
             )
-            .child(sized_text("c", Size::new(15, 9)))
-            .into_element();
+            .child(cx.text("c").size(Size::new(15, 9)))
+            .try_build()
+            .unwrap();
 
-        let mut tree = FrameTree::new();
-        let root = tree.resolve(element, Constraints::exact(Size::new(100, 100)).loosen());
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+        tree.resolve(root, Constraints::exact(Size::new(100, 100)).loosen());
 
-        assert_eq!(tree.nodes[root].layout.outer_size, Size::new(30, 16));
+        assert_eq!(tree.node(root).layout.outer_size, Size::new(30, 16));
 
-        let row = tree.nodes[root].child.expect("column should have a row child");
-        let last_text = tree.nodes[row].sibling.expect("column should have a text child");
-        assert_eq!(tree.nodes[row].layout.offset, Point::zero());
-        assert_eq!(tree.nodes[last_text].layout.offset, Point::new(0, 7));
+        let row = tree.node(root).child.expect("column should have a row child");
+        let last_text = tree.node(row).sibling.expect("column should have a text child");
+        assert_eq!(tree.node(row).layout.offset, Point::zero());
+        assert_eq!(tree.node(last_text).layout.offset, Point::new(0, 7));
 
-        let first_text = tree.nodes[row].child.expect("row should have a text child");
-        let second_text = tree.nodes[first_text].sibling.expect("row should have two children");
-        assert_eq!(tree.nodes[first_text].layout.offset, Point::zero());
-        assert_eq!(tree.nodes[second_text].layout.offset, Point::new(10, 0));
+        let first_text = tree.node(row).child.expect("row should have a text child");
+        let second_text = tree.node(first_text).sibling.expect("row should have two children");
+        assert_eq!(tree.node(first_text).layout.offset, Point::zero());
+        assert_eq!(tree.node(second_text).layout.offset, Point::new(10, 0));
     }
 
     #[test]
     fn column_draws_its_styled_border_box() {
-        let column = column().with_style(Style {
+        let column = NodeKind::<Rgb565>::Column(Style {
             border: 1.into(),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
@@ -650,19 +791,21 @@ mod tests {
 
     #[test]
     fn asymmetric_insets_drive_size_and_offsets() {
-        let element: Element<'_> = text("")
-            .with_style(Style {
-                margin: Insets::new(1, 2, 3, 4),
-                border: Insets::new(1, 2, 3, 4),
-                padding: Insets::new(5, 6, 7, 8),
-                size: Some(Size::new(30, 25)),
-                ..Style::default()
-            })
-            .into_element();
+        let mut storage = FrameStorage::<Rgb565, 1, 1>::default();
+        let cx = Context::new(storage.view());
 
-        let mut tree = FrameTree::new();
-        let root = tree.resolve(element, Constraints::exact(Size::new(100, 100)).loosen());
-        let layout = &tree.nodes[root].layout;
+        let root = cx
+            .text("")
+            .margin(Insets::new(1, 2, 3, 4))
+            .border(Insets::new(1, 2, 3, 4))
+            .padding(Insets::new(5, 6, 7, 8))
+            .size(Size::new(30, 25))
+            .try_build()
+            .unwrap();
+
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+        tree.resolve(root, Constraints::exact(Size::new(100, 100)).loosen());
+        let layout = &tree.node(root).layout;
 
         assert_eq!(layout.border_size, Size::new(30, 25));
         assert_eq!(layout.outer_size, Size::new(36, 29));
@@ -673,58 +816,57 @@ mod tests {
 
     #[test]
     fn adjacent_margins_add_in_rows() {
-        fn box_with_margin(margin: Insets) -> Text<'static> {
-            text("").with_style(Style { margin, size: Some(Size::new(10, 10)), ..Style::default() })
-        }
+        let mut storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let cx = Context::new(storage.view());
 
-        let element = row()
-            .child(box_with_margin(Insets::new(0, 2, 0, 0)))
-            .child(box_with_margin(Insets::new(0, 0, 0, 3)))
-            .into_element();
+        let root = cx
+            .row()
+            .child(cx.text("").margin(Insets::new(0, 2, 0, 0)).size(Size::new(10, 10)))
+            .child(cx.text("").margin(Insets::new(0, 0, 0, 3)).size(Size::new(10, 10)))
+            .try_build()
+            .unwrap();
 
-        let mut tree = FrameTree::new();
-        let root = tree.resolve(element, Constraints::exact(Size::new(100, 100)).loosen());
-        let first = tree.nodes[root].child.expect("row should have children");
-        let second = tree.nodes[first].sibling.expect("row should have two children");
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+        tree.resolve(root, Constraints::exact(Size::new(100, 100)).loosen());
 
-        assert_eq!(tree.nodes[first].layout.outer_size, Size::new(12, 10));
-        assert_eq!(tree.nodes[second].layout.offset, Point::new(12, 0));
+        let first = tree.node(root).child.expect("row should have children");
+        let second = tree.node(first).sibling.expect("row should have two children");
 
-        let first_box = tree.nodes[first].layout.resolve(Point::zero()).border;
-        let second_box = tree.nodes[second].layout.resolve(Point::zero()).border;
+        assert_eq!(tree.node(first).layout.outer_size, Size::new(12, 10));
+        assert_eq!(tree.node(second).layout.offset, Point::new(12, 0));
+
+        let first_box = tree.node(first).layout.resolve(Point::zero()).border;
+        let second_box = tree.node(second).layout.resolve(Point::zero()).border;
         assert_eq!(first_box.top_left.x + 10, 10);
         assert_eq!(second_box.top_left.x, 15);
     }
 
     #[test]
     fn explicit_size_grows_for_insets_but_hard_constraints_win() {
-        fn inset_box() -> Element<'static> {
-            text("")
-                .with_style(Style {
-                    padding: 4.into(),
-                    border: 2.into(),
-                    size: Some(Size::new(5, 5)),
-                    ..Style::default()
-                })
-                .into_element()
-        }
-
-        let mut loose_tree = FrameTree::new();
+        let mut loose_storage = FrameStorage::<Rgb565, 1, 1>::default();
+        let loose_cx = Context::new(loose_storage.view());
         let loose =
-            loose_tree.resolve(inset_box(), Constraints::exact(Size::new(100, 100)).loosen());
-        assert_eq!(loose_tree.nodes[loose].layout.border_size, Size::new(12, 12));
-        assert_eq!(loose_tree.nodes[loose].layout.content_size, Size::zero());
+            loose_cx.text("").padding(4).border(2).size(Size::new(5, 5)).try_build().unwrap();
+        let mut loose_tree = FrameTree::new(loose_cx.storage.into_inner());
+        loose_tree.resolve(loose, Constraints::exact(Size::new(100, 100)).loosen());
 
-        let mut constrained_tree = FrameTree::new();
+        assert_eq!(loose_tree.node(loose).layout.border_size, Size::new(12, 12));
+        assert_eq!(loose_tree.node(loose).layout.content_size, Size::zero());
+
+        let mut constrained_storage = FrameStorage::<Rgb565, 1, 1>::default();
+        let constrained_cx = Context::new(constrained_storage.view());
         let constrained =
-            constrained_tree.resolve(inset_box(), Constraints::exact(Size::new(8, 8)));
-        assert_eq!(constrained_tree.nodes[constrained].layout.border_size, Size::new(8, 8));
-        assert_eq!(constrained_tree.nodes[constrained].layout.content_size, Size::zero());
+            constrained_cx.text("").padding(4).border(2).size(Size::new(5, 5)).try_build().unwrap();
+        let mut constrained_tree = FrameTree::new(constrained_cx.storage.into_inner());
+        constrained_tree.resolve(constrained, Constraints::exact(Size::new(8, 8)));
+
+        assert_eq!(constrained_tree.node(constrained).layout.border_size, Size::new(8, 8));
+        assert_eq!(constrained_tree.node(constrained).layout.content_size, Size::zero());
     }
 
     #[test]
     fn asymmetric_borders_are_painted_inside_the_border_box() {
-        let column = column().with_style(Style {
+        let column = NodeKind::<Rgb565>::Column(Style {
             border: Insets::new(1, 2, 3, 4),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
@@ -750,7 +892,7 @@ mod tests {
 
     #[test]
     fn box_painting_supports_binary_color() {
-        let column: Column<'_, BinaryColor> = column().with_style(Style {
+        let column = NodeKind::<BinaryColor>::Column(Style {
             border: (1, 2, 1, 2).into(),
             border_color: Some(BinaryColor::On),
             background: Some(BinaryColor::Off),

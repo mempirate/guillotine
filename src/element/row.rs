@@ -1,17 +1,9 @@
-extern crate alloc;
-
-use core::convert::Infallible;
-
-use alloc::vec::Vec;
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::{DrawTarget, PixelColor},
-};
+use embedded_graphics::prelude::PixelColor;
 
 use crate::{
-    Context, FrameStorage, NodeIndex, Style,
-    element::{Element, IntoElement, ParentElement, draw_box},
-    layout::BoxLayout,
+    Context, Node, NodeIndex, NodeKind, Style,
+    element::{BuildError, ElementBuilder, ParentElement},
+    layout::Layout,
     style::StyledElement,
 };
 
@@ -19,132 +11,89 @@ use crate::{
 #[derive(Default, PartialEq, Eq)]
 pub struct RowStyle {}
 
-/// A horizontal container declaration.
-///
-/// `Vec` is useful while exploring the public API, but it is not intended to be the final
-/// storage strategy. An allocation-free implementation will reconcile children directly into
-/// caller-provided arena storage through [`crate::Context`].
-#[derive(Default, PartialEq, Eq)]
-pub struct Row<'a, C = Rgb565, CE = Infallible>
-where
-    C: PixelColor,
-{
-    pub(crate) children: Vec<Element<'a, C, CE>>,
-    pub(crate) style: Style<RowStyle, C>,
-}
-
-impl<C> Row<'_, C>
-where
-    C: PixelColor,
-{
-    /// Creates an empty row.
-    pub fn new() -> Self {
-        Self { children: Vec::new(), style: Style::default() }
-    }
-
-    /// Sets the style of this row.
-    pub const fn with_style(mut self, style: Style<RowStyle, C>) -> Self {
-        self.style = style;
-        self
-    }
-
-    /// Returns a reference to this row's style.
-    pub const fn style(&self) -> &Style<RowStyle, C> {
-        &self.style
-    }
-
-    /// Draws this row onto the given target, using the provided layout. Does NOT draw children,
-    /// that responsibility is delegated to the children themselves.
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = C>,
-    {
-        draw_box(&self.style, layout, target)
-    }
-}
-
-impl<'a, C> IntoElement for Row<'a, C>
-where
-    C: PixelColor,
-{
-    type Element = Element<'a, C>;
-
-    fn into_element(self) -> Element<'a, C> {
-        Element::Row(self)
-    }
-}
-
-impl<'a, C> ParentElement<'a, C> for Row<'a, C>
-where
-    C: PixelColor,
-{
-    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a, C>>) {
-        self.children.extend(elements);
-    }
-}
-
-impl<C> StyledElement for Row<'_, C>
-where
-    C: PixelColor,
-{
-    type Color = C;
-    type Specific = RowStyle;
-
-    fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color> {
-        &mut self.style
-    }
-}
-
-/// Creates an empty horizontal container.
-pub fn row<'a, C>() -> Row<'a, C>
-where
-    C: PixelColor,
-{
-    Row::new()
-}
-
-impl<'cx, C: PixelColor> Context<'cx, C> {
+impl<'frame, C: PixelColor> Context<'frame, C> {
     /// Creates an empty horizontal container builder.
-    pub fn row(&'cx self) -> RowBuilder<'cx, C> {
+    pub fn row(&self) -> RowBuilder<'_, 'frame, C> {
         RowBuilder::new(self)
     }
 }
 
-pub struct RowBuilder<'cx, C: PixelColor> {
+pub struct RowBuilder<'cx, 'frame, C: PixelColor> {
     pub(crate) style: Style<RowStyle, C>,
-    cx: &'cx Context<'cx, C>,
+    cx: &'cx Context<'frame, C>,
     first_child: Option<NodeIndex>,
     last_child: Option<NodeIndex>,
+
+    /// Optional error that occurred during build.
+    error: Option<BuildError>,
 }
 
-impl<'cx, C: PixelColor> RowBuilder<'cx, C> {
-    pub fn new(cx: &'cx Context<'cx, C>) -> Self {
-        Self { style: Style::default(), cx, first_child: None, last_child: None }
+impl<'cx, 'frame, C: PixelColor> RowBuilder<'cx, 'frame, C> {
+    pub fn new(cx: &'cx Context<'frame, C>) -> Self {
+        Self { style: Style::default(), cx, first_child: None, last_child: None, error: None }
     }
 }
 
-impl<'a, C> ParentElement<'a, C> for RowBuilder<'a, C>
-where
-    C: PixelColor,
-{
-    fn extend(&mut self, elements: impl IntoIterator<Item = Element<'a, C>>) {
-        todo!()
-        // let first = self.storage.len();
-        // self.storage.extend(elements);
-        // let last = self.storage.len();
-
-        // self.children.extend(first..last);
-    }
-}
-
-impl<'a, C> StyledElement for RowBuilder<'_, C>
+impl<C> StyledElement for RowBuilder<'_, '_, C>
 where
     C: PixelColor,
 {
     type Color = C;
     type Specific = RowStyle;
 
+    fn style(&self) -> &Style<Self::Specific, Self::Color> {
+        &self.style
+    }
+
     fn style_mut(&mut self) -> &mut Style<Self::Specific, Self::Color> {
         &mut self.style
+    }
+}
+
+impl<C: PixelColor> ParentElement for RowBuilder<'_, '_, C> {
+    fn extend<E: ElementBuilder>(&mut self, elements: impl IntoIterator<Item = E>) {
+        // Short-circuit if an error occurred during a previous extend call.
+        if self.error.is_some() {
+            return;
+        }
+
+        for element in elements {
+            match element.try_build() {
+                Ok(idx) => {
+                    // Link the child: if no child is set as the first child, we set it.
+                    self.first_child.get_or_insert(idx);
+
+                    if let Some(last) = self.last_child {
+                        // Link the child to the last child, if any.
+                        self.cx.link_sibling(last, idx);
+                    }
+
+                    // Record last child.
+                    self.last_child = Some(idx);
+                }
+                Err(err) => {
+                    // Record the error and break early.
+                    self.error = Some(err);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+impl<C: PixelColor> ElementBuilder for RowBuilder<'_, '_, C> {
+    fn try_build(self) -> Result<NodeIndex, BuildError> {
+        if let Some(err) = self.error {
+            return Err(err);
+        }
+
+        let node = Node {
+            kind: NodeKind::Row(self.style),
+            layout: Layout::empty(),
+            child: self.first_child,
+            sibling: None,
+        };
+
+        self.cx.insert(node)
     }
 }
