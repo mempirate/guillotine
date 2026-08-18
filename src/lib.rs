@@ -42,7 +42,7 @@ pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 102
 
 impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
     /// Returns a mutable view into this storage buffer.
-    pub fn view(&mut self) -> StorageView<'_, C> {
+    pub const fn view(&mut self) -> StorageView<'_, C> {
         StorageView { nodes: &mut self.nodes, text: &mut self.text }
     }
 
@@ -91,7 +91,7 @@ where
     ///
     /// This constructor supports arbitrary custom [`PixelColor`] implementations. For the
     /// standard embedded-graphics color types, [`Ui::new`] supplies a black and white theme.
-    pub fn with_theme(
+    pub const fn with_theme(
         display: D,
         storage: FrameStorage<D::Color, N, T>,
         theme: Theme<D::Color>,
@@ -131,9 +131,9 @@ where
         let mut tree = FrameTree::new(cx.storage.into_inner());
         tree.resolve(root, viewport);
 
-        self.display.clear(self.theme.background).map_err(|e| RenderError::Draw(e))?;
+        self.display.clear(self.theme.background).map_err(RenderError::Draw)?;
 
-        tree.draw(&mut self.display, &self.theme).map_err(|e| RenderError::Draw(e))?;
+        tree.draw(&mut self.display, &self.theme).map_err(RenderError::Draw)?;
 
         Ok(())
     }
@@ -252,7 +252,7 @@ where
 
         if let NodeKind::Text(text) = &node.kind {
             // Extract the content of the text node.
-            let content = text.content(&self.storage.text);
+            let content = text.content(self.storage.text);
 
             text.draw(content, &layout, display, theme)?;
         } else {
@@ -414,11 +414,11 @@ enum NodeKind<C> {
 }
 
 impl<C: PixelColor> NodeKind<C> {
-    pub(crate) fn box_style(&self) -> BoxStyle {
+    pub(crate) const fn box_style(&self) -> BoxStyle {
         match self {
-            NodeKind::Row(style) => style.box_style(),
-            NodeKind::Column(style) => style.box_style(),
-            NodeKind::Text(text) => text.style.box_style(),
+            Self::Row(style) => style.box_style(),
+            Self::Column(style) => style.box_style(),
+            Self::Text(text) => text.style.box_style(),
         }
     }
 
@@ -427,8 +427,8 @@ impl<C: PixelColor> NodeKind<C> {
         D: DrawTarget<Color = C>,
     {
         match self {
-            NodeKind::Row(style) => draw_box(style, layout, display),
-            NodeKind::Column(style) => draw_box(style, layout, display),
+            Self::Row(style) => draw_box(style, layout, display),
+            Self::Column(style) => draw_box(style, layout, display),
             _ => unimplemented!("text drawing uses a different code path"),
         }
     }
@@ -498,7 +498,7 @@ where
 }
 
 impl<C: PixelColor> Node<C> {
-    pub(crate) fn box_style(&self) -> BoxStyle {
+    pub(crate) const fn box_style(&self) -> BoxStyle {
         self.kind.box_style()
     }
 
@@ -590,7 +590,7 @@ pub(crate) struct TextRange {
 
 impl<'frame, C: PixelColor> Context<'frame, C> {
     /// Creates a new [`Context`] with the given [`FrameStorage`].
-    fn new(storage: StorageView<'frame, C>) -> Self {
+    const fn new(storage: StorageView<'frame, C>) -> Self {
         Self { storage: core::cell::RefCell::new(storage) }
     }
 

@@ -54,7 +54,7 @@ impl<'cx, 'frame, 't, C: PixelColor> TextBuilder<'cx, 'frame, 't, C> {
                 let character_style = MonoTextStyle::new(font, BinaryColor::On);
 
                 let bounds = GraphicsText::with_baseline(
-                    self.content.as_ref(),
+                    self.content,
                     Point::new(0, 0),
                     character_style,
                     Baseline::Top,
