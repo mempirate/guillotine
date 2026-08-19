@@ -2,6 +2,8 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
 
+#[cfg(feature = "framebuffer")]
+pub mod buffered;
 mod common;
 mod draw;
 mod element;

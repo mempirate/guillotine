@@ -15,13 +15,13 @@ use crate::{
 };
 
 impl<C: PixelColor> NodeKind<C> {
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
+    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
     {
         match self {
-            Self::Row(style) => draw_box(style, layout, display),
-            Self::Column(style) => draw_box(style, layout, display),
+            Self::Row(style) => draw_box(style, layout, target),
+            Self::Column(style) => draw_box(style, layout, target),
             _ => unimplemented!("text drawing uses a different code path"),
         }
     }
@@ -42,13 +42,13 @@ impl<C: PixelColor> TextNode<C> {
         &self,
         content: &str,
         layout: &BoxLayout,
-        display: &mut D,
+        target: &mut D,
         theme: &Theme<C>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
     {
-        draw_box(&self.style, layout, display)?;
+        draw_box(&self.style, layout, target)?;
 
         match self.style.font {
             Font::Mono(font) => {
@@ -63,13 +63,14 @@ impl<C: PixelColor> TextNode<C> {
                     character_style,
                     Baseline::Top,
                 )
-                .draw(display)?;
+                .draw(target)?;
             }
         }
         Ok(())
     }
 }
 
+// TODO: Clean up everything below.
 /// Draws the common border box shared by all built-in elements.
 pub(crate) fn draw_box<S, C, D>(
     style: &Style<S, C>,

@@ -55,11 +55,11 @@ impl<C: PixelColor> Node<C> {
         self.kind.box_style()
     }
 
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, display: &mut D) -> Result<(), D::Error>
+    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
     {
-        self.kind.draw(layout, display)
+        self.kind.draw(layout, target)
     }
 
     /// Sets the index of the next sibling node.
@@ -101,8 +101,8 @@ where
         self.layout_node(root, constraints);
     }
 
-    /// Draws the frame tree onto the given display, starting with `root` at `offset`.
-    pub(crate) fn draw<D>(&mut self, display: &mut D, theme: &Theme<C>) -> Result<(), D::Error>
+    /// Draws the frame tree onto the given target, starting with `root` at `offset`.
+    pub(crate) fn draw<D>(&mut self, target: &mut D, theme: &Theme<C>) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
     {
@@ -110,7 +110,7 @@ where
             return Ok(());
         };
 
-        self.draw_node(root, Point::zero(), display, theme)
+        self.draw_node(root, Point::zero(), target, theme)
     }
 
     /// Returns whether the display must be cleared before drawing the frame.
@@ -139,7 +139,7 @@ where
         &mut self,
         index: NodeIndex,
         parent_origin: Point,
-        display: &mut D,
+        target: &mut D,
         theme: &Theme<C>,
     ) -> Result<(), D::Error>
     where
@@ -152,15 +152,15 @@ where
             // Extract the content of the text node.
             let content = text.content(self.storage.text);
 
-            text.draw(content, &layout, display, theme)?;
+            text.draw(content, &layout, target, theme)?;
         } else {
-            node.draw(&layout, display)?;
+            node.draw(&layout, target)?;
         }
 
         let mut child = node.child;
 
         while let Some(index) = child {
-            self.draw_node(index, layout.content.top_left, display, theme)?;
+            self.draw_node(index, layout.content.top_left, target, theme)?;
             child = self.node(index).sibling;
         }
 

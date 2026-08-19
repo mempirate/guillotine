@@ -14,8 +14,9 @@ rust-version = "1.87"
 publish = ["crates-io"]
 
 [features]
-default = ["defmt"]
+default = ["defmt", "framebuffer"]
 defmt = ["dep:defmt"]
+framebuffer = []
 
 simulator = ["dep:embedded-graphics-simulator", "dep:sdl2"]
 
