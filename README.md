@@ -74,13 +74,13 @@ flicker to near unnoticeable if you can cover the whole display.
 ```rust,ignore
 use embedded_graphics::{pixelcolor::Rgb565, mock_display::MockDisplay};
 use static_cell::ConstStaticCell;
-use guillotine::*;
+use guillotine::{*, buffered::BufferedTarget};
 
 /// The size of the frame buffer, should ideally cover your whole display
 /// (width * height).
 const FRAMEBUFFER_PIXELS: usize = 320 * 172;
 
-/// Allocate the buffer in static memory (not on the stack) with your
+/// Allocate the buffer in static memory with your
 /// chosen color.
 static FRAMEBUFFER: ConstStaticCell<[Rgb565; FRAMEBUFFER_PIXELS]> =
     ConstStaticCell::new([Rgb565::new(0, 0, 0); FRAMEBUFFER_PIXELS]);
@@ -101,12 +101,23 @@ fn main() {
 }
 ```
 
+Large buffers should generally use static storage (with [`static_cell`](https://docs.rs/static_cell/latest/static_cell/struct.ConstStaticCell.html)).
+Small buffers can live on the stack if the stack size permits it.
+
+Note that the memory used by an `Rgb565` buffer is `pixels x 2 bytes`.
+
 ### Picking Sizes
 Ideally, your frame buffer covers the whole display. However, you can provide a
 buffer of any size, and `render()` will execute a greedy top-down traversal to
 find the first subtree that fits. 
 Passing buffers that are smaller than the area of any element on the screen will
 fall back to direct drawing.
+
+> [!NOTE]
+> If your frame buffer doesn't fit the root element, it is painted directly
+> before its children are considered. An opaque root background may therefore
+> appear as a visible clear before buffered children are presented, so you
+> may still notice a flicker.
 
 ## Memory Management
 Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) to store fixed-capacity node and text arrays inline.
@@ -122,7 +133,7 @@ data inline, capacity has to be specified upfront through const generics. `Frame
 1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
 2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
 
-Since `FrameStorage` allocates statically, it's recommended to tune `N` and `T` to fit the specifics
+It's recommended to tune `N` and `T` to fit the specifics
 of your UI. `FrameStorage` exposes some methods to help you do that:
 - `usage()` returns the used length of both buffers.
 - `capacity()` returns the capacity of both buffers.
