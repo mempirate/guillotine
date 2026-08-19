@@ -55,7 +55,7 @@ fn main() {
     // Initialize stack-based storage for the frame. Capacity: 128 elements
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
-    let mut ui = Ui::new(display, storage);
+    let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     // Render the view
     ui.render(&view);
@@ -129,7 +129,7 @@ fn main() {
     let display = MockDisplay::<Rgb565>::new();
 
     let storage = FrameStorage::<Rgb565>::default();
-    let mut ui = Ui::new(display, storage);
+    let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     let mut home = Home {
         show_button: false,

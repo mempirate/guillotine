@@ -19,14 +19,10 @@ pub trait DisplayTarget: DrawTarget + OriginDimensions {
 }
 
 /// A display target that only supports direct drawing without buffering. For a buffered display,
-/// use [`BufferedTarget`](buffered::BufferedTarget) (behind the `framebuffer` feature).
-pub struct DirectTarget<D: DisplayTarget<Color = C>, C: PixelColor>(D);
+/// use [`BufferedDisplay`](crate::buffered::BufferedDisplay) (behind the `framebuffer` feature).
+pub struct DirectTarget<D>(D);
 
-impl<D, C> core::ops::Deref for DirectTarget<D, C>
-where
-    D: DisplayTarget<Color = C>,
-    C: PixelColor,
-{
+impl<D> core::ops::Deref for DirectTarget<D> {
     type Target = D;
 
     fn deref(&self) -> &Self::Target {
@@ -34,33 +30,27 @@ where
     }
 }
 
-impl<D, C> DirectTarget<D, C>
-where
-    D: DisplayTarget<Color = C>,
-    C: PixelColor,
-{
+impl<D> DirectTarget<D> {
     /// Creates a new [`DirectTarget`] with the given display target.
-    pub fn new(display: D) -> Self {
+    pub const fn new(display: D) -> Self {
         Self(display)
     }
 }
 
-impl<D, C> OriginDimensions for DirectTarget<D, C>
+impl<D> OriginDimensions for DirectTarget<D>
 where
-    D: DisplayTarget<Color = C>,
-    C: PixelColor,
+    D: OriginDimensions,
 {
     fn size(&self) -> Size {
         self.0.size()
     }
 }
 
-impl<D, C> DrawTarget for DirectTarget<D, C>
+impl<D> DrawTarget for DirectTarget<D>
 where
-    D: DisplayTarget<Color = C>,
-    C: PixelColor,
+    D: DrawTarget + OriginDimensions,
 {
-    type Color = C;
+    type Color = D::Color;
 
     type Error = D::Error;
 
@@ -83,10 +73,9 @@ where
     }
 }
 
-impl<D, C> DisplayTarget for DirectTarget<D, C>
+impl<D> DisplayTarget for DirectTarget<D>
 where
-    D: DisplayTarget<Color = C>,
-    C: PixelColor,
+    D: DrawTarget + OriginDimensions,
 {
     fn try_begin(&mut self, _: Rectangle, _: Self::Color) -> bool {
         false

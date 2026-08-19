@@ -38,7 +38,7 @@ where
     C: PixelColor,
 {
     /// Initializes a new [`BufferedDisplay`] with the given display and buffer.
-    pub fn new(display: &'a mut D, buffer: &'a mut [C]) -> Self {
+    pub const fn new(display: &'a mut D, buffer: &'a mut [C]) -> Self {
         Self { display, pixels: buffer, mode: Mode::Direct }
     }
 
@@ -157,15 +157,32 @@ where
     }
 
     fn fill_solid(&mut self, area: &Rectangle, color: C) -> Result<(), Self::Error> {
-        match self.mode {
+        match &mut self.mode {
             Mode::Direct => self.display.fill_solid(area, color),
-            // TODO: Optimized implementation.
-            Mode::Buffered { .. } => self.draw_iter(area.points().map(|point| Pixel(point, color))),
+            Mode::Buffered { bounds, len } => {
+                let area = area.intersection(bounds);
+                if area.size == Size::zero() {
+                    return Ok(());
+                }
+
+                let buffer_width = bounds.size.width as usize;
+                let area_width = area.size.width as usize;
+                let x = (area.top_left.x - bounds.top_left.x) as usize;
+                let y = (area.top_left.y - bounds.top_left.y) as usize;
+                let framebuffer = &mut self.pixels[..*len];
+
+                for row in y..y + area.size.height as usize {
+                    let start = row * buffer_width + x;
+                    framebuffer[start..start + area_width].fill(color);
+                }
+
+                Ok(())
+            }
         }
     }
 }
 
-fn pixel_count(bounds: Rectangle) -> Option<usize> {
+const fn pixel_count(bounds: Rectangle) -> Option<usize> {
     (bounds.size.width as usize).checked_mul(bounds.size.height as usize)
 }
 
