@@ -52,16 +52,96 @@ fn main() {
         greeting: "Hello world!"
     };
 
-    // Initialize stack-based storage for the frame. Capacity: 128 elements
+    // Initialize stack-based storage for the frame. Capacity: 32 elements
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
-    let mut ui = Ui::new(display, storage);
+    // Create a new UI with a direct display target. Used here for brevity;
+    // if you have memory available, use `BufferedTarget`.
+    let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     // Render the view
     ui.render(&view);
 }
 
 ```
+
+## Frame Buffers
+The `framebuffer` feature (on by default) provides a `BufferedTarget` type that
+works with caller-provided frame buffers. It is highly recommended to use this
+over `DirectTarget`, since it can dramatically increase frame rates and reduce
+flicker to near unnoticeable if you can cover the whole display.
+
+```rust,ignore
+use embedded_graphics::{pixelcolor::Rgb565, mock_display::MockDisplay};
+use static_cell::ConstStaticCell;
+use guillotine::{*, buffered::BufferedTarget};
+
+/// The size of the frame buffer, should ideally cover your whole display
+/// (width * height).
+const FRAMEBUFFER_PIXELS: usize = 320 * 172;
+
+/// Allocate the buffer in static memory with your
+/// chosen color.
+static FRAMEBUFFER: ConstStaticCell<[Rgb565; FRAMEBUFFER_PIXELS]> =
+    ConstStaticCell::new([Rgb565::new(0, 0, 0); FRAMEBUFFER_PIXELS]);
+
+fn main() {
+    let mut display = MockDisplay::<Rgb565>::new();
+    
+    // Initialize stack-based storage for the frame. Capacity: 32 elements
+    // and 128 bytes of UTF-8 text.
+    let storage = FrameStorage::<Rgb565, 32, 128>::default();
+
+    /// Initialize the buffered display target 
+    let target = BufferedTarget::new(&mut display, FRAMEBUFFER.take());
+    
+    let mut ui = Ui::new(target, storage);
+
+    // ... render something
+}
+```
+
+Large buffers should generally use static storage (with [`static_cell`](https://docs.rs/static_cell/latest/static_cell/struct.ConstStaticCell.html)).
+Small buffers can live on the stack if the stack size permits it.
+
+Note that the memory used by an `Rgb565` buffer is `pixels x 2 bytes`.
+
+### Picking Sizes
+Ideally, your frame buffer covers the whole display. However, you can provide a
+buffer of any size, and `render()` will execute a greedy top-down traversal to
+find the first subtree that fits. 
+Passing buffers that are smaller than the area of any element on the screen will
+fall back to direct drawing.
+
+> [!NOTE]
+> If your frame buffer doesn't fit the root element, it is painted directly
+> before its children are considered. An opaque root background may therefore
+> appear as a visible clear before buffered children are presented, so you
+> may still notice a flicker.
+
+## Memory Management
+Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) to store fixed-capacity node and text arrays inline.
+
+This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
+signature looks like this:
+```rust,ignore
+pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024>
+```
+
+Since `heapless` stores
+data inline, capacity has to be specified upfront through const generics. `FrameStorage` contains 2 buffers:
+1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
+2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
+
+It's recommended to tune `N` and `T` to fit the specifics
+of your UI. `FrameStorage` exposes some methods to help you do that:
+- `usage()` returns the used length of both buffers.
+- `capacity()` returns the capacity of both buffers.
+
+> [!NOTE]
+> These buffers are only populated *after* calls to `render()`, and will contain the element tree and
+> text bytes for the currently rendered frame.
+
 
 ## Core Concepts
 
@@ -129,7 +209,7 @@ fn main() {
     let display = MockDisplay::<Rgb565>::new();
 
     let storage = FrameStorage::<Rgb565>::default();
-    let mut ui = Ui::new(display, storage);
+    let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     let mut home = Home {
         show_button: false,
@@ -176,29 +256,6 @@ columns add together.
 `Style::size` is the border-box size: padding and border are placed inside it, and margin is added
 outside it. The box grows to contain its padding and border when parent constraints allow.
 
-## Memory Management
-
-Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) for static memory allocation.
-
-This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
-signature looks like this:
-```rust,ignore
-pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024>
-```
-
-Since `heapless` stores
-data inline, capacity has to be specified upfront through const generics. `FrameStorage` contains 2 buffers:
-1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
-2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
-
-Since `FrameStorage` allocates statically, it's recommended to tune `N` and `T` to fit the specifics
-of your UI. `FrameStorage` exposes some methods to help you do that:
-- `usage()` returns the used length of both buffers.
-- `capacity()` returns the capacity of both buffers.
-
-> [!NOTE]
-> These buffers are only populated *after* calls to `render()`, and will contain the element tree and
-> text bytes for the currently rendered frame.
 
 ## Examples
 
@@ -225,8 +282,8 @@ Additionally, I wanted to learn what it would take to build something like this.
 - [x] Low-level `Element` / `ParentElement` trait for custom elements and widgets
 - [x] Support generic `PixelColor`
 - [x] Full immediate mode redrawing
-- [ ] Make repo ready for publishing:
-  - [ ] README documentation (a la Dioxus)
+- [x] Make repo ready for publishing:
+  - [x] README documentation (a la Dioxus)
   - [x] Rustdoc documentation
   - [x] Examples
     - Sizing (insets)
@@ -246,6 +303,9 @@ Additionally, I wanted to learn what it would take to build something like this.
 - [x] No alloc
   
 ### v0.2.0
+- [x] `framebuffer` feature with frame buffer support
+
+### Backlog
 - [ ] Add memory usage for examples
   - cargo binutils for examples in CI (cargo size). This will detect regressions.
 - [ ] Documentation
@@ -253,9 +313,9 @@ Additionally, I wanted to learn what it would take to build something like this.
 - [ ] Benchmarks for:
   - [ ] Frame rendering
   - [ ] Frame drawing
+- [ ] Stats for frame buffers (to determine optimal sizing)
 - [ ] Container gaps (flex from CSS)
 - [ ] Incremental drawing behind an `inremental` feature
-- [ ] `framebuffer` feature
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
