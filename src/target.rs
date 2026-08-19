@@ -4,6 +4,7 @@ use embedded_graphics::{
     pixelcolor::PixelColor,
     primitives::Rectangle,
 };
+#[cfg(feature = "simulator")]
 use embedded_graphics_simulator::SimulatorDisplay;
 
 /// A display target that optionally supports buffered drawing.
