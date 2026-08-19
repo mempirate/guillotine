@@ -55,6 +55,8 @@ fn main() {
     // Initialize stack-based storage for the frame. Capacity: 128 elements
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
+    // Create a new UI with a direct display target. Used here for brevity;
+    // if you have memory available, use `BufferedDisplay`.
     let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     // Render the view
@@ -62,6 +64,72 @@ fn main() {
 }
 
 ```
+
+## Frame Buffers
+The `framebuffer` feature (on by default) provides a `BufferedDisplay` type that
+works with caller-provided frame buffers. It is highly recommended to use this
+over `DirectTarget`, since it can dramatically increase frame rates and reduce
+flicker to near unnoticeable.
+
+```rust,no_run
+use embedded_graphics::pixelcolor::Rgb565;
+use static_cell::ConstStaticCell;
+use guillotine::*;
+
+/// The size of the frame buffer, should ideally cover your whole display
+/// (width * height).
+const FRAMEBUF_PIXELS: usize = 320 * 172;
+
+/// Allocate the buffer in static memory (not on the stack) with your
+/// chosen color.
+static FRAMEBUFFER: ConstStaticCell<[Rgb565; FRAMEBUFFER_PIXELS]> =
+    ConstStaticCell::new([Rgb565::new(0, 0, 0); FRAMEBUFFER_PIXELS]);
+
+fn main() {
+    let display = MockDisplay::<Rgb565>::new();
+    
+    // Initialize stack-based storage for the frame. Capacity: 128 elements
+    // and 128 bytes of UTF-8 text.
+    let storage = FrameStorage::<Rgb565, 32, 128>::default();
+
+    /// Initialize the buffered display target 
+    let target = BufferedTarget::new(&mut display, FRAMEBUFFER.take());
+    
+    let mut ui = Ui::new(target, storage);
+
+    // ... render something
+}
+```
+
+## Memory Management
+
+Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) for static memory allocation.
+
+This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
+signature looks like this:
+```rust,ignore
+pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024>
+```
+
+Since `heapless` stores
+data inline, capacity has to be specified upfront through const generics. `FrameStorage` contains 2 buffers:
+1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
+2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
+
+Since `FrameStorage` allocates statically, it's recommended to tune `N` and `T` to fit the specifics
+of your UI. `FrameStorage` exposes some methods to help you do that:
+- `usage()` returns the used length of both buffers.
+- `capacity()` returns the capacity of both buffers.
+
+> [!NOTE]
+> These buffers are only populated *after* calls to `render()`, and will contain the element tree and
+> text bytes for the currently rendered frame.
+
+### Picking Sizes
+Ideally, your frame buffer covers the whole display. However, you can provide a
+buffer of any size, and `render()` will attempt to draw the largest possible
+subtree of elements into it. Passing buffers that are smaller than the area of
+any element on the screen is basically a no-op.
 
 ## Core Concepts
 
@@ -176,29 +244,6 @@ columns add together.
 `Style::size` is the border-box size: padding and border are placed inside it, and margin is added
 outside it. The box grows to contain its padding and border when parent constraints allow.
 
-## Memory Management
-
-Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) for static memory allocation.
-
-This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
-signature looks like this:
-```rust,ignore
-pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024>
-```
-
-Since `heapless` stores
-data inline, capacity has to be specified upfront through const generics. `FrameStorage` contains 2 buffers:
-1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
-2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
-
-Since `FrameStorage` allocates statically, it's recommended to tune `N` and `T` to fit the specifics
-of your UI. `FrameStorage` exposes some methods to help you do that:
-- `usage()` returns the used length of both buffers.
-- `capacity()` returns the capacity of both buffers.
-
-> [!NOTE]
-> These buffers are only populated *after* calls to `render()`, and will contain the element tree and
-> text bytes for the currently rendered frame.
 
 ## Examples
 

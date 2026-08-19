@@ -9,8 +9,8 @@ use embedded_graphics::{
 
 use crate::DisplayTarget;
 
-/// A display wrapper that uses an internal buffer for drawing.
-pub struct BufferedDisplay<'a, D, C>
+/// A target wrapper that uses an internal buffer for drawing.
+pub struct BufferedTarget<'a, D, C>
 where
     D: DrawTarget<Color = C>,
     C: PixelColor,
@@ -32,7 +32,7 @@ enum Mode {
     },
 }
 
-impl<'a, D, C> BufferedDisplay<'a, D, C>
+impl<'a, D, C> BufferedTarget<'a, D, C>
 where
     D: DrawTarget<Color = C>,
     C: PixelColor,
@@ -49,7 +49,7 @@ where
     }
 }
 
-impl<'a, D, C> DisplayTarget for BufferedDisplay<'a, D, C>
+impl<'a, D, C> DisplayTarget for BufferedTarget<'a, D, C>
 where
     D: DrawTarget<Color = C> + OriginDimensions,
     C: PixelColor,
@@ -85,7 +85,7 @@ where
     }
 }
 
-impl<'a, D, C> OriginDimensions for BufferedDisplay<'a, D, C>
+impl<'a, D, C> OriginDimensions for BufferedTarget<'a, D, C>
 where
     D: DrawTarget<Color = C> + OriginDimensions,
     C: PixelColor,
@@ -96,7 +96,7 @@ where
     }
 }
 
-impl<'a, D, C> DrawTarget for BufferedDisplay<'a, D, C>
+impl<'a, D, C> DrawTarget for BufferedTarget<'a, D, C>
 where
     D: DrawTarget<Color = C> + OriginDimensions,
     C: PixelColor,
@@ -198,7 +198,7 @@ mod tests {
         let mut buffer = [BinaryColor::Off; 4];
 
         {
-            let mut target = BufferedDisplay::new(&mut display, &mut buffer);
+            let mut target = BufferedTarget::new(&mut display, &mut buffer);
             target
                 .fill_solid(&Rectangle::new(Point::new(1, 1), Size::new(2, 1)), BinaryColor::On)
                 .unwrap();
@@ -216,7 +216,7 @@ mod tests {
         let bounds = Rectangle::new(Point::new(2, 3), Size::new(2, 2));
 
         {
-            let mut target = BufferedDisplay::new(&mut display, &mut buffer);
+            let mut target = BufferedTarget::new(&mut display, &mut buffer);
             assert!(target.can_buffer(bounds));
             assert!(!target.can_buffer(Rectangle::new(Point::zero(), Size::new(3, 2))));
 
