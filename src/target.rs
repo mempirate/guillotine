@@ -1,9 +1,11 @@
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Size},
-    pixelcolor::PixelColor,
     primitives::Rectangle,
 };
+
+#[cfg(feature = "simulator")]
+use embedded_graphics::pixelcolor::PixelColor;
 #[cfg(feature = "simulator")]
 use embedded_graphics_simulator::SimulatorDisplay;
 

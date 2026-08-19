@@ -198,7 +198,7 @@ where
     }
 
     fn draw_node<D>(
-        &mut self,
+        &self,
         index: NodeIndex,
         layout: &BoxLayout,
         target: &mut D,
@@ -213,9 +213,9 @@ where
             // Extract the content of the text node.
             let content = text.content(self.storage.text);
 
-            text.draw(content, &layout, target, theme)
+            text.draw(content, layout, target, theme)
         } else {
-            node.draw(&layout, target)
+            node.draw(layout, target)
         }
     }
 
