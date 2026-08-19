@@ -26,7 +26,7 @@ fn main() {
     let storage = FrameStorage::<Color>::default();
     println!("storage size: {}", storage.size());
 
-    let mut ui = Ui::new(display, storage);
+    let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     ui.render(&BinaryView).unwrap();
 

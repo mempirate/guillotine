@@ -9,13 +9,11 @@ mod draw;
 mod element;
 mod layout;
 pub mod style;
+mod target;
 mod theme;
 mod tree;
 
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::{DrawTarget, OriginDimensions, PixelColor},
-};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::PixelColor};
 
 pub use element::{
     BuildError, ColumnStyle, ElementBuilder, Font, ParentElement, RowStyle, TextStyle,
@@ -23,6 +21,7 @@ pub use element::{
 };
 use heapless::VecView;
 pub use style::{Insets, Style, StyledElement};
+pub use target::{DirectTarget, DisplayTarget};
 pub use theme::Theme;
 
 use crate::{
@@ -102,7 +101,7 @@ pub struct StorageView<'frame, C: PixelColor> {
 /// with [`Self::render`].
 pub struct Ui<D, const N: usize = 64, const T: usize = 1024>
 where
-    D: DrawTarget + OriginDimensions,
+    D: DisplayTarget,
 {
     display: D,
     storage: FrameStorage<D::Color, N, T>,
@@ -123,7 +122,7 @@ pub enum RenderError<E> {
 
 impl<D, const N: usize, const T: usize> Ui<D, N, T>
 where
-    D: DrawTarget + OriginDimensions,
+    D: DisplayTarget,
 {
     /// Creates a new [`Ui`] instance with an explicit theme.
     ///
@@ -169,11 +168,6 @@ where
         let mut tree = FrameTree::new(cx.storage.into_inner());
         tree.resolve(root, viewport);
 
-        // Conditionally clear the display if the root node needs it.
-        if tree.needs_clear(self.display.size()) {
-            self.display.clear(self.theme.background).map_err(RenderError::Draw)?;
-        }
-
         tree.draw(&mut self.display, &self.theme).map_err(RenderError::Draw)?;
 
         Ok(())
@@ -207,7 +201,7 @@ where
 
 impl<D, const N: usize, const T: usize> Ui<D, N, T>
 where
-    D: DrawTarget + OriginDimensions,
+    D: DisplayTarget,
     Theme<D::Color>: Default,
 {
     /// Creates a new [`Ui`] instance with a black background and white foreground.

@@ -31,7 +31,7 @@ fn main() {
     let storage = FrameStorage::<Rgb565>::default();
     println!("storage size: {}", storage.size());
 
-    let mut ui = Ui::new(display, storage);
+    let mut ui = Ui::new(DirectTarget::new(display), storage);
 
     ui.render(&view).unwrap();
 

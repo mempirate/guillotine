@@ -7,16 +7,7 @@ use embedded_graphics::{
     primitives::{PointsIter as _, Rectangle},
 };
 
-/// A display target that optionally supports buffered drawing.
-pub trait DisplayTarget: DrawTarget + OriginDimensions {
-    /// Begins a new framebuffer mode with the given bounds and background color. A corresponding
-    /// call to [`flush`](Self::flush) is required to update the display.
-    fn try_begin(&mut self, bounds: Rectangle, background: Self::Color) -> bool;
-
-    /// Flushes the buffer to the display, filling any remaining space with the given background
-    /// color. Resets the mode to direct drawing.
-    fn flush(&mut self) -> Result<(), Self::Error>;
-}
+use crate::DisplayTarget;
 
 /// A display wrapper that uses an internal buffer for drawing.
 pub struct BufferedDisplay<'a, D, C>
@@ -52,7 +43,8 @@ where
     }
 
     /// Returns whether the given bounds can be buffered using the current buffer capacity.
-    pub(crate) fn can_buffer(&self, bounds: Rectangle) -> bool {
+    #[allow(unused)]
+    fn can_buffer(&self, bounds: Rectangle) -> bool {
         pixel_count(bounds).is_some_and(|len| len <= self.pixels.len())
     }
 }
@@ -63,14 +55,17 @@ where
     C: PixelColor,
 {
     fn try_begin(&mut self, bounds: Rectangle, background: Self::Color) -> bool {
-        let len = pixel_count(bounds).expect("invalid framebuffer bounds, w*h overflows");
+        let Some(len) = pixel_count(bounds) else {
+            return false;
+        };
 
         assert!(
             matches!(self.mode, Mode::Direct),
             "transaction already in progress, call flush first"
         );
 
-        if len <= self.pixels.len() {
+        // Check that the buffer is large enough
+        if len > self.pixels.len() {
             return false;
         }
 

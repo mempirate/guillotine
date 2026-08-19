@@ -153,7 +153,7 @@ fn main() {
     let storage = FrameStorage::<Rgb565>::default();
     println!("Storage size: {}", storage.size());
 
-    let mut ui = Ui::new(display, storage).with_background(CANVAS);
+    let mut ui = Ui::new(DirectTarget::new(display), storage).with_background(CANVAS);
     ui.render(&monitor).unwrap();
 
     let usage = ui.storage().usage();
