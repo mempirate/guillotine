@@ -4,7 +4,7 @@ use embedded_graphics::{
     prelude::{PixelColor, Size},
 };
 
-use crate::Constraints;
+use crate::{Constraints, DivStyle};
 
 /// Physical top, right, bottom, and left insets in pixels.
 ///
@@ -314,6 +314,31 @@ pub enum FlexDirection {
     Row,
     /// Vertical axis.
     Column,
+}
+
+impl From<&'static str> for FlexDirection {
+    fn from(value: &'static str) -> Self {
+        match value {
+            "row" => FlexDirection::Row,
+            "column" => FlexDirection::Column,
+            _ => panic!("invalid flex direction: {}", value),
+        }
+    }
+}
+
+/// Flexbox layout properties.
+#[derive(PartialEq, Eq)]
+pub(crate) struct FlexLayout {
+    /// Direction of the flex layout, either horizontally (row) or vertically (column).
+    pub direction: FlexDirection,
+    /// Spacing between flex items.
+    pub gap: Size,
+}
+
+impl From<DivStyle> for FlexLayout {
+    fn from(style: DivStyle) -> Self {
+        FlexLayout { direction: style.direction, gap: style.gap }
+    }
 }
 
 #[cfg(test)]

@@ -503,6 +503,43 @@ mod tests {
     }
 
     #[test]
+    fn flex_gaps_apply_on_the_main_axis_and_contribute_to_size() {
+        let mut row_storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let row_cx = Context::new(row_storage.view());
+        let row = row_cx
+            .row()
+            .gap(4)
+            .child(row_cx.text("").size(Size::new(10, 5)))
+            .child(row_cx.text("").size(Size::new(20, 7)))
+            .try_build()
+            .unwrap();
+        let mut row_tree = FrameTree::new(row_cx.storage.into_inner());
+        row_tree.layout(row, Constraints::exact(Size::new(100, 100)).loosen());
+
+        let row_first = row_tree.node(row).child.unwrap();
+        let row_second = row_tree.node(row_first).sibling.unwrap();
+        assert_eq!(row_tree.node(row_second).layout.offset, Point::new(14, 0));
+        assert_eq!(row_tree.node(row).layout.outer_size, Size::new(34, 7));
+
+        let mut column_storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let column_cx = Context::new(column_storage.view());
+        let column = column_cx
+            .column()
+            .gap(3)
+            .child(column_cx.text("").size(Size::new(10, 5)))
+            .child(column_cx.text("").size(Size::new(20, 7)))
+            .try_build()
+            .unwrap();
+        let mut column_tree = FrameTree::new(column_cx.storage.into_inner());
+        column_tree.layout(column, Constraints::exact(Size::new(100, 100)).loosen());
+
+        let column_first = column_tree.node(column).child.unwrap();
+        let column_second = column_tree.node(column_first).sibling.unwrap();
+        assert_eq!(column_tree.node(column_second).layout.offset, Point::new(0, 8));
+        assert_eq!(column_tree.node(column).layout.outer_size, Size::new(20, 15));
+    }
+
+    #[test]
     fn column_draws_its_styled_border_box() {
         let column = NodeKind::<Rgb565>::Div(Style {
             border: 1.into(),

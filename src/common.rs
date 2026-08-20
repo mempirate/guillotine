@@ -31,3 +31,27 @@ pub(crate) struct TextRange {
     pub offset: usize,
     pub len: usize,
 }
+
+/// Represents a gap between elements, stored as a `Size`.
+/// Supports conversion from `u32` and `Size` values, as well
+/// as a shorthand from `(u32, u32)` values (width, height).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gap(pub(crate) Size);
+
+impl From<u32> for Gap {
+    fn from(value: u32) -> Self {
+        Self(Size::new(value, value))
+    }
+}
+
+impl From<Size> for Gap {
+    fn from(value: Size) -> Self {
+        Self(value)
+    }
+}
+
+impl From<(u32, u32)> for Gap {
+    fn from((horizontal, vertical): (u32, u32)) -> Self {
+        Self(Size::new(horizontal, vertical))
+    }
+}

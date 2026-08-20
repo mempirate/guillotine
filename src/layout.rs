@@ -6,7 +6,7 @@ use embedded_graphics::{
 
 use crate::{
     common::{NodeIndex, SizeExt as _, to_i32},
-    style::FlexDirection,
+    style::{FlexDirection, FlexLayout},
     tree::{FrameTree, NodeKind},
 };
 
@@ -98,6 +98,38 @@ pub(crate) struct BoxLayout {
     pub(crate) content: Rectangle,
 }
 
+impl FlexDirection {
+    /// Splits a physical size into its main-axis and cross-axis components.
+    ///
+    /// The main axis is the direction in which children are laid out; the cross axis is
+    /// perpendicular to it. A row therefore uses width as its main size and height as its cross
+    /// size, while a column uses height as its main size and width as its cross size.
+    const fn split(self, size: Size) -> (u32, u32) {
+        match self {
+            Self::Row => (size.width, size.height),
+            Self::Column => (size.height, size.width),
+        }
+    }
+
+    /// Creates a physical offset from a logical main-axis offset.
+    const fn offset(self, main: u32) -> Point {
+        let main = to_i32(main);
+
+        match self {
+            Self::Row => Point::new(main, 0),
+            Self::Column => Point::new(0, main),
+        }
+    }
+
+    /// Creates a physical size from logical main-axis and cross-axis sizes.
+    const fn size(self, main: u32, cross: u32) -> Size {
+        match self {
+            Self::Row => Size::new(main, cross),
+            Self::Column => Size::new(cross, main),
+        }
+    }
+}
+
 impl<'frame, C> FrameTree<'frame, C>
 where
     C: PixelColor,
@@ -120,21 +152,19 @@ where
         // Determine the content's intrinsic size without retaining a
         // borrow of `self.nodes[index]` while layout_children mutates children.
         enum ContentLayout {
-            Container(FlexDirection),
+            /// Flexbox layout.
+            Flex(FlexLayout),
             // A leaf with an inherent size.
             Leaf(Size),
         }
 
         let content_layout = match &self.node(index).kind {
-            NodeKind::Div(style) => ContentLayout::Container(style.specific.direction),
+            NodeKind::Div(style) => ContentLayout::Flex(style.specific.clone().into()),
             NodeKind::Text(text) => ContentLayout::Leaf(content_constraints.constrain(text.size)),
         };
 
         let intrinsic_content_size = match content_layout {
-            ContentLayout::Container(axis) => {
-                self.layout_children(index, content_constraints, axis)
-            }
-
+            ContentLayout::Flex(layout) => self.layout_children(index, content_constraints, layout),
             ContentLayout::Leaf(size) => size,
         };
 
@@ -185,45 +215,41 @@ where
         &mut self,
         index: NodeIndex,
         constraints: Constraints,
-        direction: FlexDirection,
+        layout: FlexLayout,
     ) -> Size {
-        let mut main_size: u32 = 0;
-        let mut cross_size: u32 = 0;
+        let direction = layout.direction;
+        let (gap, _) = direction.split(layout.gap);
+
+        // Main is the cursor (x or y depending on direction).
+        let mut main: u32 = 0;
+        // Cross is the maximum size on the perpendicular axis / direction.
+        let mut cross: u32 = 0;
 
         // Get the optional child.
-        let mut child = self.node(index).child;
+        let mut next = self.node(index).child;
 
-        while let Some(child_idx) = child {
-            self.layout_node(child_idx, constraints);
+        while let Some(next_idx) = next {
+            self.layout_node(next_idx, constraints);
 
-            let size = self.node(child_idx).layout.outer_size;
+            let size = self.node(next_idx).layout.outer_size;
+            // Get the child's main and cross sizes based on direction.
+            let (child_main, child_cross) = direction.split(size);
 
-            let main_offset = i32::try_from(main_size).unwrap_or(i32::MAX);
+            // Calculate the next offset based on the main cursor.
+            let offset = direction.offset(main);
+            self.node_mut(next_idx).layout.set_offset(offset);
 
-            // TODO: Only allows for start alignment, and no gap.
-            let offset = match direction {
-                FlexDirection::Row => Point::new(main_offset, 0),
-                FlexDirection::Column => Point::new(0, main_offset),
-            };
+            main = main.saturating_add(child_main);
+            cross = cross.max(child_cross);
 
-            self.node_mut(child_idx).layout.set_offset(offset);
+            next = self.node(next_idx).sibling;
 
-            let (child_main_size, child_cross_size) = match direction {
-                FlexDirection::Row => (size.width, size.height),
-                FlexDirection::Column => (size.height, size.width),
-            };
-
-            main_size = main_size.saturating_add(child_main_size);
-            cross_size = cross_size.max(child_cross_size);
-
-            child = self.node(child_idx).sibling;
+            // Only add the gap if there's a next sibling.
+            if next.is_some() {
+                main = main.saturating_add(gap);
+            }
         }
 
-        let intrinsic_size = match direction {
-            FlexDirection::Row => Size::new(main_size, cross_size),
-            FlexDirection::Column => Size::new(cross_size, main_size),
-        };
-
-        constraints.constrain(intrinsic_size)
+        constraints.constrain(direction.size(main, cross))
     }
 }

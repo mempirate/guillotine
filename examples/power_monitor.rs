@@ -30,21 +30,22 @@ impl Render for PowerMonitor<'_> {
     fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
         cx.column()
             .padding(8)
+            .gap(4)
             .background(CANVAS)
             .size(Size::new(320, 172))
             .child(header(cx))
-            .child(live_power(cx, self.power).margin((4, 0, 0, 0)))
+            .child(live_power(cx, self.power))
             .child(
                 cx.row()
-                    .margin((4, 0, 0, 0))
-                    .child(metric_card(cx, "VOLTAGE", self.voltage).margin((0, 2, 0, 0)))
-                    .child(metric_card(cx, "CURRENT", self.current).margin((0, 2, 0, 0)))
+                    .gap(2)
+                    .child(metric_card(cx, "VOLTAGE", self.voltage))
+                    .child(metric_card(cx, "CURRENT", self.current))
                     .child(metric_card(cx, "REFRESH", "5 SEC")),
             )
             .child(
                 cx.row()
-                    .margin((4, 0, 0, 0))
-                    .child(summary_card(cx, "ENERGY / RESET", self.energy).margin((0, 2, 0, 0)))
+                    .gap(2)
+                    .child(summary_card(cx, "ENERGY / RESET", self.energy))
                     .child(summary_card(cx, "EST. COST", self.cost)),
             )
     }

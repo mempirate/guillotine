@@ -2,7 +2,7 @@ use embedded_graphics::{geometry::Size, prelude::PixelColor};
 
 use crate::{
     Context, Style,
-    common::NodeIndex,
+    common::{Gap, NodeIndex},
     element::{BuildError, ElementBuilder, ParentElement},
     layout::Layout,
     style::{FlexDirection, StyledElement},
@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// Style for a div element.
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DivStyle {
     /// Gap between child elements.
@@ -36,23 +36,19 @@ impl<'cx, 'frame, C: PixelColor> DivBuilder<'cx, 'frame, C> {
 }
 
 impl<'frame, C: PixelColor> Context<'frame, C> {
-    /// Creates a new div container builder.
+    /// Creates a new div container builder, with a default row flex direction.
     pub fn div(&self) -> DivBuilder<'_, 'frame, C> {
         DivBuilder::new(self)
     }
 
     /// Creates an empty row container builder.
     pub fn row(&self) -> DivBuilder<'_, 'frame, C> {
-        let mut div = DivBuilder::new(self);
-        div.style.specific.direction = FlexDirection::Row;
-        div
+        DivBuilder::new(self).flex_direction(FlexDirection::Row)
     }
 
     /// Creates an empty column container builder.
     pub fn column(&self) -> DivBuilder<'_, 'frame, C> {
-        let mut div = DivBuilder::new(self);
-        div.style.specific.direction = FlexDirection::Column;
-        div
+        DivBuilder::new(self).flex_direction(FlexDirection::Column)
     }
 }
 
@@ -126,13 +122,19 @@ where
     C: PixelColor,
 {
     /// Sets the gap between child elements.
-    fn gap(mut self, gap: Size) -> Self {
-        self.style_mut().specific.gap = gap;
+    fn gap(mut self, gap: impl Into<Gap>) -> Self {
+        self.style_mut().specific.gap = gap.into().0;
+        self
+    }
+
+    /// Sets the flex direction of the container.
+    fn flex_direction(mut self, direction: FlexDirection) -> Self {
+        self.style_mut().specific.direction = direction;
         self
     }
 }
 
-impl<T, C: PixelColor> StyledFlexContainer<C> for T
+impl<T, C> StyledFlexContainer<C> for T
 where
     T: StyledElement<Color = C, Specific = DivStyle>,
     C: PixelColor,
