@@ -166,9 +166,9 @@ where
 
         // Build and resolve the frame tree.
         let mut tree = FrameTree::new(cx.storage.into_inner());
-        tree.resolve(root, viewport);
+        tree.layout(root, viewport);
 
-        tree.draw(&mut self.display, &self.theme).map_err(RenderError::Draw)?;
+        tree.draw(&self.theme, &mut self.display).map_err(RenderError::Draw)?;
 
         Ok(())
     }
@@ -394,7 +394,7 @@ mod tests {
         let root = cx.column().size(viewport).try_build().unwrap();
         let mut tree = FrameTree::new(cx.storage.into_inner());
 
-        tree.resolve(root, Constraints::max(viewport));
+        tree.layout(root, Constraints::max(viewport));
 
         assert!(tree.needs_clear(viewport));
     }
@@ -408,7 +408,7 @@ mod tests {
             cx.column().background(Rgb565::BLACK).size(Size::new(10, 20)).try_build().unwrap();
         let mut tree = FrameTree::new(cx.storage.into_inner());
 
-        tree.resolve(root, Constraints::max(viewport));
+        tree.layout(root, Constraints::max(viewport));
 
         assert!(tree.needs_clear(viewport));
     }
@@ -421,7 +421,7 @@ mod tests {
         let root = cx.column().background(Rgb565::BLACK).size(viewport).try_build().unwrap();
         let mut tree = FrameTree::new(cx.storage.into_inner());
 
-        tree.resolve(root, Constraints::max(viewport));
+        tree.layout(root, Constraints::max(viewport));
 
         assert!(!tree.needs_clear(viewport));
     }
@@ -487,7 +487,7 @@ mod tests {
             .unwrap();
 
         let mut tree = FrameTree::new(cx.storage.into_inner());
-        tree.resolve(root, Constraints::exact(Size::new(100, 100)).loosen());
+        tree.layout(root, Constraints::exact(Size::new(100, 100)).loosen());
 
         assert_eq!(tree.node(root).layout.outer_size, Size::new(30, 16));
 
@@ -539,7 +539,7 @@ mod tests {
             .unwrap();
 
         let mut tree = FrameTree::new(cx.storage.into_inner());
-        tree.resolve(root, Constraints::exact(Size::new(100, 100)).loosen());
+        tree.layout(root, Constraints::exact(Size::new(100, 100)).loosen());
         let layout = &tree.node(root).layout;
 
         assert_eq!(layout.border_size, Size::new(30, 25));
@@ -562,7 +562,7 @@ mod tests {
             .unwrap();
 
         let mut tree = FrameTree::new(cx.storage.into_inner());
-        tree.resolve(root, Constraints::exact(Size::new(100, 100)).loosen());
+        tree.layout(root, Constraints::exact(Size::new(100, 100)).loosen());
 
         let first = tree.node(root).child.expect("row should have children");
         let second = tree.node(first).sibling.expect("row should have two children");
@@ -583,7 +583,7 @@ mod tests {
         let loose =
             loose_cx.text("").padding(4).border(2).size(Size::new(5, 5)).try_build().unwrap();
         let mut loose_tree = FrameTree::new(loose_cx.storage.into_inner());
-        loose_tree.resolve(loose, Constraints::exact(Size::new(100, 100)).loosen());
+        loose_tree.layout(loose, Constraints::exact(Size::new(100, 100)).loosen());
 
         assert_eq!(loose_tree.node(loose).layout.border_size, Size::new(12, 12));
         assert_eq!(loose_tree.node(loose).layout.content_size, Size::zero());
@@ -593,7 +593,7 @@ mod tests {
         let constrained =
             constrained_cx.text("").padding(4).border(2).size(Size::new(5, 5)).try_build().unwrap();
         let mut constrained_tree = FrameTree::new(constrained_cx.storage.into_inner());
-        constrained_tree.resolve(constrained, Constraints::exact(Size::new(8, 8)));
+        constrained_tree.layout(constrained, Constraints::exact(Size::new(8, 8)));
 
         assert_eq!(constrained_tree.node(constrained).layout.border_size, Size::new(8, 8));
         assert_eq!(constrained_tree.node(constrained).layout.content_size, Size::zero());

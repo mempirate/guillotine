@@ -108,8 +108,14 @@ impl<'frame, C> FrameTree<'frame, C>
 where
     C: PixelColor,
 {
+    /// Lays out the full tree, starting with the root node.
+    pub(crate) fn layout(&mut self, root: NodeIndex, constraints: Constraints) {
+        self.root = Some(root);
+        self.layout_node(root, constraints);
+    }
+
     // TODO: Clean up
-    pub(crate) fn layout_node(&mut self, index: NodeIndex, constraints: Constraints) {
+    fn layout_node(&mut self, index: NodeIndex, constraints: Constraints) {
         // Extract the common box style properties.
         let box_style = self.node(index).box_style();
 

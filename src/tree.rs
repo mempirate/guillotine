@@ -10,24 +10,11 @@ use embedded_graphics::{
 use crate::{
     ColumnStyle, DisplayTarget, RowStyle, StorageView, Style, TextStyle, Theme,
     common::{NodeIndex, TextRange},
-    layout::{BoxLayout, Constraints, Layout},
+    layout::{BoxLayout, Layout},
     style::BoxStyle,
 };
 
-/// Operations, single pass:
-/// - Recursively walk the element tree to build the frame tree. For each element, calculate hard
-///   constraints (`inner_constraints`) and push them down to the children.
-/// - Once the leafs are resolved, push sizes back up the tree. For container elements, also
-///   calculate relative offsets for each child.
-pub(crate) struct FrameTree<'frame, C>
-where
-    C: PixelColor,
-{
-    pub root: Option<NodeIndex>,
-    pub storage: StorageView<'frame, C>,
-}
-
-/// A node in a [`FrameTree`].
+/// A node in a [`FrameTree`], with pointers to child and sibling nodes.
 pub(crate) struct Node<C>
 where
     C: PixelColor,
@@ -61,11 +48,24 @@ impl<C: PixelColor> Node<C> {
     }
 }
 
+/// [`FrameTree`] is a tree of [`Node`]s, with operations for laying out the frame and then drawing
+/// it.
+pub(crate) struct FrameTree<'frame, C>
+where
+    C: PixelColor,
+{
+    /// The index of the root node, only set after [`FrameTree::layout`] is called.
+    pub root: Option<NodeIndex>,
+    /// The storage for the frame tree, including nodes and text.
+    pub storage: StorageView<'frame, C>,
+}
+
 impl<'frame, C> FrameTree<'frame, C>
 where
     C: PixelColor,
 {
-    /// Creates a new (unresolved) frame tree from the given storage.
+    /// Creates a new frame tree from the given storage. Does not perform any layout operations yet,
+    /// for which [`FrameTree::layout`] must be called.
     pub(crate) const fn new(storage: StorageView<'frame, C>) -> Self {
         Self { root: None, storage }
     }
@@ -88,14 +88,8 @@ where
         &mut self.storage.nodes[index]
     }
 
-    /// Resolves the tree: lays out the root node and its children recursively.
-    pub(crate) fn resolve(&mut self, root: NodeIndex, constraints: Constraints) {
-        self.root = Some(root);
-        self.layout_node(root, constraints);
-    }
-
     /// Draws the frame tree onto the given target, starting with `root` at `offset`.
-    pub(crate) fn draw<D>(&mut self, target: &mut D, theme: &Theme<C>) -> Result<(), D::Error>
+    pub(crate) fn draw<D>(&mut self, theme: &Theme<C>, target: &mut D) -> Result<(), D::Error>
     where
         D: DisplayTarget<Color = C>,
     {
@@ -107,7 +101,7 @@ where
             // A transparent or partial root requires the complete viewport to be
             // initialized. Prefer doing that invisibly in the framebuffer.
             if target.try_begin(viewport, theme.background) {
-                self.draw_subtree(root, Point::zero(), target, theme)?;
+                self.draw_subtree(root, Point::zero(), theme, target)?;
                 return target.flush();
             }
 
@@ -115,7 +109,7 @@ where
             target.clear(theme.background)?;
         }
 
-        self.draw_adaptive(root, Point::zero(), theme.background, viewport, target, theme)
+        self.draw_adaptive(root, Point::zero(), theme.background, viewport, theme, target)
     }
 
     /// Returns whether the display must be cleared before drawing the frame.
@@ -152,8 +146,8 @@ where
         parent_origin: Point,
         inherited_background: C,
         viewport: Rectangle,
-        target: &mut D,
         theme: &Theme<C>,
+        target: &mut D,
     ) -> Result<(), D::Error>
     where
         D: DisplayTarget<Color = C>,
@@ -162,14 +156,14 @@ where
         let bounds = layout.border.intersection(&viewport);
 
         if bounds.size != Size::zero() && target.try_begin(bounds, inherited_background) {
-            self.draw_subtree(index, parent_origin, target, theme)?;
+            self.draw_subtree(index, parent_origin, theme, target)?;
             target.flush()?;
             return Ok(());
         }
 
         // This node didn't fit, so it is painted directly. The children will be tried to fit
         // into the remaining space in the next recursive call.
-        self.draw_node(index, &layout, target, theme)?;
+        self.draw_node(index, &layout, theme, target)?;
 
         let child_background = self.node(index).kind.background().unwrap_or(inherited_background);
         let mut child = self.node(index).child;
@@ -180,8 +174,8 @@ where
                 layout.content.top_left,
                 child_background,
                 viewport,
-                target,
                 theme,
+                target,
             )?;
 
             child = self.node(index).sibling;
@@ -190,12 +184,13 @@ where
         Ok(())
     }
 
+    /// Draws a single node with the given layout and theme.
     fn draw_node<D>(
         &self,
         index: NodeIndex,
         layout: &BoxLayout,
-        target: &mut D,
         theme: &Theme<C>,
+        target: &mut D,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
@@ -216,20 +211,20 @@ where
         &mut self,
         index: NodeIndex,
         parent_origin: Point,
-        target: &mut D,
         theme: &Theme<C>,
+        target: &mut D,
     ) -> Result<(), D::Error>
     where
         D: DisplayTarget<Color = C>,
     {
         let layout = self.node(index).layout.resolve(parent_origin);
 
-        self.draw_node(index, &layout, target, theme)?;
+        self.draw_node(index, &layout, theme, target)?;
 
         let mut child = self.node(index).child;
 
         while let Some(index) = child {
-            self.draw_subtree(index, layout.content.top_left, target, theme)?;
+            self.draw_subtree(index, layout.content.top_left, theme, target)?;
             child = self.node(index).sibling;
         }
 
