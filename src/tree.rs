@@ -8,8 +8,9 @@ use embedded_graphics::{
 };
 
 use crate::{
-    ColumnStyle, DisplayTarget, RowStyle, StorageView, Style, TextStyle, Theme,
+    DisplayTarget, StorageView, Style, TextStyle, Theme,
     common::{NodeIndex, TextRange},
+    element::DivStyle,
     layout::{BoxLayout, Layout},
     style::BoxStyle,
 };
@@ -233,16 +234,14 @@ where
 }
 
 pub(crate) enum NodeKind<C> {
-    Row(Style<RowStyle, C>),
-    Column(Style<ColumnStyle, C>),
+    Div(Style<DivStyle, C>),
     Text(TextNode<C>),
 }
 
 impl<C: PixelColor> NodeKind<C> {
     pub(crate) const fn box_style(&self) -> BoxStyle {
         match self {
-            Self::Row(style) => style.box_style(),
-            Self::Column(style) => style.box_style(),
+            Self::Div(style) => style.box_style(),
             Self::Text(text) => text.style.box_style(),
         }
     }
@@ -250,8 +249,7 @@ impl<C: PixelColor> NodeKind<C> {
     /// Returns the background color of this node, if any.
     pub(crate) const fn background(&self) -> Option<C> {
         match self {
-            Self::Row(style) => style.background,
-            Self::Column(style) => style.background,
+            Self::Div(style) => style.background,
             Self::Text(text) => text.style.background,
         }
     }

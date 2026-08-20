@@ -1,27 +1,26 @@
-use embedded_graphics::prelude::PixelColor;
+use embedded_graphics::{geometry::Size, prelude::PixelColor};
 
 use crate::{
     Context, Style,
     common::NodeIndex,
     element::{BuildError, ElementBuilder, ParentElement},
     layout::Layout,
-    style::StyledElement,
+    style::{FlexDirection, StyledElement},
     tree::{Node, NodeKind},
 };
 
-/// Style for this column.
+/// Style for a div element.
 #[derive(Default, PartialEq, Eq)]
-pub struct ColumnStyle {}
-
-impl<'frame, C: PixelColor> Context<'frame, C> {
-    /// Creates an empty vertical container builder.
-    pub fn column(&self) -> ColumnBuilder<'_, 'frame, C> {
-        ColumnBuilder::new(self)
-    }
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DivStyle {
+    /// Gap between child elements.
+    pub(crate) gap: Size,
+    /// Flex direction.
+    pub(crate) direction: FlexDirection,
 }
 
-pub struct ColumnBuilder<'cx, 'frame, C: PixelColor> {
-    pub(crate) style: Style<ColumnStyle, C>,
+pub struct DivBuilder<'cx, 'frame, C: PixelColor> {
+    style: Style<DivStyle, C>,
     cx: &'cx Context<'frame, C>,
     first_child: Option<NodeIndex>,
     last_child: Option<NodeIndex>,
@@ -30,18 +29,39 @@ pub struct ColumnBuilder<'cx, 'frame, C: PixelColor> {
     error: Option<BuildError>,
 }
 
-impl<'cx, 'frame, C: PixelColor> ColumnBuilder<'cx, 'frame, C> {
+impl<'cx, 'frame, C: PixelColor> DivBuilder<'cx, 'frame, C> {
     pub fn new(cx: &'cx Context<'frame, C>) -> Self {
         Self { style: Style::default(), cx, first_child: None, last_child: None, error: None }
     }
 }
 
-impl<C> StyledElement for ColumnBuilder<'_, '_, C>
+impl<'frame, C: PixelColor> Context<'frame, C> {
+    /// Creates a new div container builder.
+    pub fn div(&self) -> DivBuilder<'_, 'frame, C> {
+        DivBuilder::new(self)
+    }
+
+    /// Creates an empty row container builder.
+    pub fn row(&self) -> DivBuilder<'_, 'frame, C> {
+        let mut div = DivBuilder::new(self);
+        div.style.specific.direction = FlexDirection::Row;
+        div
+    }
+
+    /// Creates an empty column container builder.
+    pub fn column(&self) -> DivBuilder<'_, 'frame, C> {
+        let mut div = DivBuilder::new(self);
+        div.style.specific.direction = FlexDirection::Column;
+        div
+    }
+}
+
+impl<C> StyledElement for DivBuilder<'_, '_, C>
 where
     C: PixelColor,
 {
     type Color = C;
-    type Specific = ColumnStyle;
+    type Specific = DivStyle;
 
     fn style(&self) -> &Style<Self::Specific, Self::Color> {
         &self.style
@@ -52,7 +72,7 @@ where
     }
 }
 
-impl<C: PixelColor> ParentElement for ColumnBuilder<'_, '_, C> {
+impl<C: PixelColor> ParentElement for DivBuilder<'_, '_, C> {
     fn extend<E: ElementBuilder>(&mut self, elements: impl IntoIterator<Item = E>) {
         // Short-circuit if an error occurred during a previous extend call.
         if self.error.is_some() {
@@ -83,14 +103,14 @@ impl<C: PixelColor> ParentElement for ColumnBuilder<'_, '_, C> {
     }
 }
 
-impl<C: PixelColor> ElementBuilder for ColumnBuilder<'_, '_, C> {
+impl<C: PixelColor> ElementBuilder for DivBuilder<'_, '_, C> {
     fn try_build(self) -> Result<NodeIndex, BuildError> {
         if let Some(err) = self.error {
             return Err(err);
         }
 
         let node = Node {
-            kind: NodeKind::Column(self.style),
+            kind: NodeKind::Div(self.style),
             layout: Layout::empty(),
             child: self.first_child,
             sibling: None,
@@ -98,4 +118,23 @@ impl<C: PixelColor> ElementBuilder for ColumnBuilder<'_, '_, C> {
 
         self.cx.insert(node)
     }
+}
+
+/// A trait for elements that can be styled as a flex container.
+pub trait StyledFlexContainer<C>: StyledElement<Color = C, Specific = DivStyle>
+where
+    C: PixelColor,
+{
+    /// Sets the gap between child elements.
+    fn gap(mut self, gap: Size) -> Self {
+        self.style_mut().specific.gap = gap;
+        self
+    }
+}
+
+impl<T, C: PixelColor> StyledFlexContainer<C> for T
+where
+    T: StyledElement<Color = C, Specific = DivStyle>,
+    C: PixelColor,
+{
 }

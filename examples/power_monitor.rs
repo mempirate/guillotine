@@ -52,7 +52,7 @@ impl Render for PowerMonitor<'_> {
 
 fn header(
     cx: &Context<'_>,
-) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = RowStyle> {
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = DivStyle> {
     cx.row()
         .size(Size::new(304, 18))
         .child(
@@ -74,7 +74,7 @@ fn header(
 fn live_power(
     cx: &Context<'_>,
     power: &str,
-) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = RowStyle> {
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = DivStyle> {
     cx.row()
         .border((0, 0, 0, 2))
         .border_color(ACCENT)
@@ -100,7 +100,7 @@ fn metric_card(
     cx: &Context<'_>,
     label: &str,
     value: &str,
-) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = ColumnStyle> {
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = DivStyle> {
     cx.column()
         .padding((4, 6))
         .border(1)
@@ -122,7 +122,7 @@ fn summary_card(
     cx: &Context<'_>,
     label: &str,
     value: &str,
-) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = ColumnStyle> {
+) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = DivStyle> {
     cx.column()
         .padding((4, 6))
         .border(1)

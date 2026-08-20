@@ -15,7 +15,7 @@ publish = ["crates-io"]
 
 [features]
 default = ["defmt", "framebuffer"]
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "embedded-graphics/defmt"]
 framebuffer = []
 
 simulator = ["dep:embedded-graphics-simulator", "dep:sdl2"]

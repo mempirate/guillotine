@@ -20,8 +20,7 @@ impl<C: PixelColor> NodeKind<C> {
         D: DrawTarget<Color = C>,
     {
         match self {
-            Self::Row(style) => draw_box(style, layout, target),
-            Self::Column(style) => draw_box(style, layout, target),
+            Self::Div(style) => draw_box(style, layout, target),
             _ => unimplemented!("text drawing uses a different code path"),
         }
     }
@@ -29,8 +28,7 @@ impl<C: PixelColor> NodeKind<C> {
     /// Returns whether the node has a background color, i.e. is not transparent.
     pub(crate) const fn has_background(&self) -> bool {
         match self {
-            Self::Row(style) => style.background.is_some(),
-            Self::Column(style) => style.background.is_some(),
+            Self::Div(style) => style.background.is_some(),
             Self::Text(text) => text.style.background.is_some(),
         }
     }

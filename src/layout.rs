@@ -6,6 +6,7 @@ use embedded_graphics::{
 
 use crate::{
     common::{NodeIndex, SizeExt as _, to_i32},
+    style::FlexDirection,
     tree::{FrameTree, NodeKind},
 };
 
@@ -97,13 +98,6 @@ pub(crate) struct BoxLayout {
     pub(crate) content: Rectangle,
 }
 
-/// The axis along which a container lays out its children.
-#[derive(Clone, Copy)]
-enum Axis {
-    Horizontal,
-    Vertical,
-}
-
 impl<'frame, C> FrameTree<'frame, C>
 where
     C: PixelColor,
@@ -126,14 +120,13 @@ where
         // Determine the content's intrinsic size without retaining a
         // borrow of `self.nodes[index]` while layout_children mutates children.
         enum ContentLayout {
-            Container(Axis),
+            Container(FlexDirection),
             // A leaf with an inherent size.
             Leaf(Size),
         }
 
         let content_layout = match &self.node(index).kind {
-            NodeKind::Column(_) => ContentLayout::Container(Axis::Vertical),
-            NodeKind::Row(_) => ContentLayout::Container(Axis::Horizontal),
+            NodeKind::Div(style) => ContentLayout::Container(style.specific.direction),
             NodeKind::Text(text) => ContentLayout::Leaf(content_constraints.constrain(text.size)),
         };
 
@@ -188,7 +181,12 @@ where
     /// - Traverses the children and sets their offsets.
     /// - Sums the children's sizes on the main axis and takes their maximum size on the cross axis.
     /// - Returns the constrained intrinsic size.
-    fn layout_children(&mut self, index: NodeIndex, constraints: Constraints, axis: Axis) -> Size {
+    fn layout_children(
+        &mut self,
+        index: NodeIndex,
+        constraints: Constraints,
+        direction: FlexDirection,
+    ) -> Size {
         let mut main_size: u32 = 0;
         let mut cross_size: u32 = 0;
 
@@ -203,16 +201,16 @@ where
             let main_offset = i32::try_from(main_size).unwrap_or(i32::MAX);
 
             // TODO: Only allows for start alignment, and no gap.
-            let offset = match axis {
-                Axis::Horizontal => Point::new(main_offset, 0),
-                Axis::Vertical => Point::new(0, main_offset),
+            let offset = match direction {
+                FlexDirection::Row => Point::new(main_offset, 0),
+                FlexDirection::Column => Point::new(0, main_offset),
             };
 
             self.node_mut(child_idx).layout.set_offset(offset);
 
-            let (child_main_size, child_cross_size) = match axis {
-                Axis::Horizontal => (size.width, size.height),
-                Axis::Vertical => (size.height, size.width),
+            let (child_main_size, child_cross_size) = match direction {
+                FlexDirection::Row => (size.width, size.height),
+                FlexDirection::Column => (size.height, size.width),
             };
 
             main_size = main_size.saturating_add(child_main_size);
@@ -221,9 +219,9 @@ where
             child = self.node(child_idx).sibling;
         }
 
-        let intrinsic_size = match axis {
-            Axis::Horizontal => Size::new(main_size, cross_size),
-            Axis::Vertical => Size::new(cross_size, main_size),
+        let intrinsic_size = match direction {
+            FlexDirection::Row => Size::new(main_size, cross_size),
+            FlexDirection::Column => Size::new(cross_size, main_size),
         };
 
         constraints.constrain(intrinsic_size)

@@ -1,9 +1,7 @@
-mod column;
-mod row;
+mod div;
 mod text;
 
-pub use column::*;
-pub use row::*;
+pub use div::*;
 pub use text::*;
 
 use crate::NodeIndex;

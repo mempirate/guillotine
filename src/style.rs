@@ -305,6 +305,17 @@ pub trait StyledElement: Sized {
     }
 }
 
+/// Direction of the flex layout, either horizontally (row) or vertically (column).
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum FlexDirection {
+    /// Horizontal axis (default).
+    #[default]
+    Row,
+    /// Vertical axis.
+    Column,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
