@@ -6,7 +6,7 @@
 [![Docs.rs](https://docs.rs/guillotine/badge.svg)](https://docs.rs/guillotine)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/mempirate/guillotine)
 
-A `no-std`, allocation-fre graphical user interface framework for embedded devices prioritizing efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui). Built with (and inherits compatibility from)
+A `no-std`, allocation-free graphical user interface framework for embedded devices prioritizing efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui). Built with (and inherits compatibility from)
 [`embedded-graphics`](https://docs.rs/embedded-graphics/latest/embedded_graphics/).
 
 ## Demo
