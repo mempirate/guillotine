@@ -182,18 +182,17 @@ containers along the horizontal axis with support for gaps, and columns are thei
 
 ### Flexbox
 
-More complete flexbox support is gated behind a `flexbox` feature and is turned off by default. 
-The main reason is that these flexbox properties require the layout tree to be traversed
-twice, demanding extra compute and higher render latency.
+More complete flexbox support is gated behind a `flexbox` feature and is turned off by default, 
+because these flexbox properties require the layout tree to be traversed
+twice, demanding extra compute and slightly render latency. 
 
-These properties are:
-- Container: `justify-content`
-- Container: `align-items`
-- Item: `flex_grow`
+With `flexbox` on, you'll get access to CSS-like flexbox functionality, including `justify-content` and
+`align-items` (for containers), and `flex-grow` and `flex` for items.
 
-Some properties, like `AlignItems::Stretch`, currently have a complexity of `O(N x D)`,
-where `N` is the number of nodes and `D` is the tree depth. For small trees, this shouldn't be a problem,
-but keep it in mind if you have more complex layouts.
+> [!TIP]
+> Some properties, like `AlignItems::Stretch`, currently have a complexity of `O(N x D)`,
+> where `N` is the number of nodes and `D` is the tree depth. For small trees, this shouldn't be a problem,
+> but keep it in mind if you have more complex layouts.
 
 Refer to [`flexbox.rs`](/examples/flexbox.rs) for a flexbox layout example:
 
@@ -292,15 +291,15 @@ Additionally, I wanted to learn what it would take to build something like this.
 ### v0.2.1
 - [x] `framebuffer` feature with frame buffer support
 
-### v0.2.2
+### v0.3.0
 - [x] Refactored layout engine
 - [x] Support flexbox layout (`flexbox` feature)
 
-### v0.2.3
+### v0.3.1
 - [ ] Support for [absolute positioning](https://taffylayout.com/docs/styling/position) 
       (relative by default). Introduces a new explicit `position` property to `Style`.
 
-### v0.2.4
+### v0.3.2
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
