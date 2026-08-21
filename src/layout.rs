@@ -501,9 +501,9 @@ where
             let target_main = metrics.base_main.saturating_add(growth.share(metrics.grow));
 
             let exact_main = (metrics.main != target_main).then_some(target_main);
-            let exact_cross = (layout.align_items.is_stretch()
-                && metrics.has_auto_cross_size
-                && metrics.cross != cross_available)
+            let exact_cross = (layout.align_items.is_stretch() &&
+                metrics.has_auto_cross_size &&
+                metrics.cross != cross_available)
                 .then_some(cross_available);
 
             if exact_main.is_some() || exact_cross.is_some() {
