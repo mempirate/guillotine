@@ -17,13 +17,15 @@ A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board from the [`shellyct
 
 ## Quickstart
 
-```rust,no_run
+This example uses the optional `flexbox` feature.
+
+```rust,ignore
 use embedded_graphics::{
+    mock_display::MockDisplay,
     mono_font::ascii::{FONT_6X10, FONT_9X18_BOLD},
     pixelcolor::Rgb565,
     prelude::Size,
 };
-use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, Window};
 use guillotine::{style::JustifyContent, *};
 
 const CANVAS: Rgb565 = Rgb565::new(2, 4, 6);
@@ -78,23 +80,23 @@ fn main() {
     // Display should implement embedded_graphics DrawTarget
     let display = MockDisplay::<Rgb565>::new();
 
-    let view = BasicView {
-        greeting: "Hello world!"
-    };
+    let view = BasicView { greeting: "Build tiny interfaces." };
 
     // Initialize stack-based storage for the frame. Capacity: 32 elements
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
+
     // Create a new UI with a direct display target. Used here for brevity;
     // if you have memory available, use `BufferedTarget`.
-    let mut ui = Ui::new(DirectTarget::new(display), storage);
+    let mut ui = Ui::new(DirectTarget::new(display), storage).with_background(CANVAS);
 
     // Render the view
-    ui.render(&view);
+    ui.render(&view).unwrap();
 }
 ```
 
 ## Frame Buffers
+
 The `framebuffer` feature (on by default) provides a `BufferedTarget` type that
 works with caller-provided frame buffers. It is highly recommended to use this
 over `DirectTarget`, since it can dramatically increase frame rates and reduce
@@ -136,6 +138,7 @@ Small buffers can live on the stack if the stack size permits it.
 Note that the memory used by an `Rgb565` buffer is `pixels x 2 bytes`.
 
 ### Picking Sizes
+
 Ideally, your frame buffer covers the whole display. However, you can provide a
 buffer of any size, and `render()` will execute a greedy top-down traversal to
 find the first subtree that fits. 
@@ -149,6 +152,7 @@ fall back to direct drawing.
 > may still notice a flicker.
 
 ## Memory Management
+
 Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) to store fixed-capacity node and text arrays inline.
 
 This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
@@ -195,6 +199,34 @@ Refer to [`flexbox.rs`](/examples/flexbox.rs) for a flexbox layout example:
 
 ![Flexbox example](https://raw.githubusercontent.com/mempirate/guillotine/main/img/flexbox.png)
 
+## Styling
+
+### Insets and the box model
+
+Margin, padding, and border widths accept CSS-like physical-edge shorthands:
+
+```rust,ignore
+cx.column()
+    .margin(10)                 // all edges
+    .padding((4, 8))            // vertical, horizontal
+    .border((1, 2, 3))          // top, horizontal, bottom
+    .margin((4, 8, 12, 16));    // top, right, bottom, left
+```
+
+Use `Insets::new(top, right, bottom, left)` when a named value is clearer. Insets are non-negative
+pixel lengths. Guillotine doesn't currently support percentages, `auto`, logical edges, negative
+margins, margin collapsing, per-edge border colors, or border styles. Adjacent margins in rows and
+columns add together.
+
+`size`, `width`, and `height` configure border-box dimensions: padding and border are placed inside
+them, and margin is added outside. Width and height are independent; an omitted dimension is sized
+automatically from the element's contents. Configured dimensions grow to contain padding and border
+when parent constraints allow.
+
+## Examples
+
+See the [examples README](./examples).
+
 ## Core Concepts
 
 ### Declarative Definition
@@ -219,102 +251,6 @@ Status: implemented ✅
 - Requirement: single pass.
 
 Status: implemented ✅
-
-## API
-
-```rust,no_run
-use embedded_graphics::{prelude::*, mock_display::MockDisplay, pixelcolor::Rgb565};
-
-use guillotine::*;
-
-struct Home {
-    show_button: bool,
-    header: &'static str,
-}
-
-impl Render for Home {
-    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
-        cx.row()
-            .bg(Rgb565::RED)
-            .child(cx.text(self.header))
-            .when(self.show_button, |row| row.child(cx.text("Click me")))
-            .children([cx.text("Copyright"), cx.text("ACME Corp")])
-    }
-}
-
-struct Page {
-    power: &'static str,
-    current: &'static str,
-    voltage: &'static str,
-}
-
-impl Render for Page {
-    fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
-        cx.column()
-            .child(cx.text(self.power))
-            .child(cx.text(self.current))
-            .child(cx.text(self.voltage))
-    }
-}
-
-fn main() {
-    let display = MockDisplay::<Rgb565>::new();
-
-    let storage = FrameStorage::<Rgb565>::default();
-    let mut ui = Ui::new(DirectTarget::new(display), storage);
-
-    let mut home = Home {
-        show_button: false,
-        header: "Some Title",
-    };
-
-    ui.render(&home).unwrap();
-
-    home.show_button = true;
-
-    ui.render(&home).unwrap();
-
-    let page = Page {
-        power: "Power: 50.0 W",
-        voltage: "Voltage: 230.0 V",
-        current: "Current: 0.2173 A",
-    };
-
-    ui.render(&page);
-}
-```
-
-Element trees use the display's `PixelColor` type throughout. `Rgb565` views keep the API shown
-above; other targets select their color once at the `Render<Color>` boundary, after which element
-constructors and style methods infer it. See the [binary-color example](examples/binary.rs).
-
-### Insets and the box model
-
-Margin, padding, and border widths accept CSS-like physical-edge shorthands:
-
-```rust,ignore
-cx.column()
-    .margin(10)                 // all edges
-    .padding((4, 8))            // vertical, horizontal
-    .border((1, 2, 3))          // top, horizontal, bottom
-    .margin((4, 8, 12, 16));    // top, right, bottom, left
-```
-
-Use `Insets::new(top, right, bottom, left)` when a named value is clearer. Insets are non-negative
-pixel lengths. Guillotine doesn't currently support percentages, `auto`, logical edges, negative
-margins, margin collapsing, per-edge border colors, or border styles. Adjacent margins in rows and
-columns add together.
-
-`size`, `width`, and `height` configure border-box dimensions: padding and border are placed inside
-them, and margin is added outside. Width and height are independent; an omitted dimension is sized
-automatically from the element's contents. Configured dimensions grow to contain padding and border
-when parent constraints allow.
-
-
-## Examples
-
-See the [examples README](./examples).
-
 
 ## Why?
 
