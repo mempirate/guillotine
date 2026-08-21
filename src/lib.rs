@@ -708,6 +708,95 @@ mod tests {
         assert_eq!(column_tree.node(column_explicit).layout.border_size, Size::new(12, 10));
     }
 
+    #[cfg(feature = "flexbox")]
+    #[test]
+    fn flex_and_flex_grow_use_zero_and_auto_bases() {
+        let mut flex_storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let flex_cx = Context::new(flex_storage.view());
+        let flex = flex_cx
+            .row()
+            .size(Size::new(100, 20))
+            .child(flex_cx.text("").size(Size::new(10, 5)).flex(1))
+            .child(flex_cx.text("").size(Size::new(20, 5)).flex(1))
+            .try_build()
+            .unwrap();
+        let mut flex_tree = FrameTree::new(flex_cx.storage.into_inner());
+        flex_tree.layout(flex, Constraints::max(Size::new(100, 20)));
+
+        let first = flex_tree.node(flex).child.unwrap();
+        let second = flex_tree.node(first).sibling.unwrap();
+        assert_eq!(flex_tree.node(first).layout.border_size.width, 50);
+        assert_eq!(flex_tree.node(second).layout.border_size.width, 50);
+
+        let mut grow_storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let grow_cx = Context::new(grow_storage.view());
+        let grow = grow_cx
+            .row()
+            .size(Size::new(100, 20))
+            .child(grow_cx.text("").size(Size::new(10, 5)).flex_grow(1))
+            .child(grow_cx.text("").size(Size::new(20, 5)).flex_grow(1))
+            .try_build()
+            .unwrap();
+        let mut grow_tree = FrameTree::new(grow_cx.storage.into_inner());
+        grow_tree.layout(grow, Constraints::max(Size::new(100, 20)));
+
+        let first = grow_tree.node(grow).child.unwrap();
+        let second = grow_tree.node(first).sibling.unwrap();
+        assert_eq!(grow_tree.node(first).layout.border_size.width, 45);
+        assert_eq!(grow_tree.node(second).layout.border_size.width, 55);
+    }
+
+    #[cfg(feature = "flexbox")]
+    #[test]
+    fn flex_distributes_remainders_after_gaps_and_margins() {
+        let mut storage = FrameStorage::<Rgb565, 4, 1>::default();
+        let cx = Context::new(storage.view());
+        let root = cx
+            .row()
+            .size(Size::new(101, 20))
+            .gap(5)
+            .child(cx.text("").margin((0, 2)).flex(1))
+            .child(cx.text("").margin((0, 1)).flex(1))
+            .child(cx.text("").flex(1))
+            .try_build()
+            .unwrap();
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+        tree.layout(root, Constraints::max(Size::new(101, 20)));
+
+        let first = tree.node(root).child.unwrap();
+        let second = tree.node(first).sibling.unwrap();
+        let third = tree.node(second).sibling.unwrap();
+
+        // 101 - 10 gap pixels - 6 margin pixels = 85 flexible pixels.
+        assert_eq!(tree.node(first).layout.border_size.width, 28);
+        assert_eq!(tree.node(second).layout.border_size.width, 28);
+        assert_eq!(tree.node(third).layout.border_size.width, 29);
+        assert_eq!(tree.node(second).layout.offset.x, 37);
+        assert_eq!(tree.node(third).layout.offset.x, 72);
+    }
+
+    #[cfg(feature = "flexbox")]
+    #[test]
+    fn flex_grow_and_stretch_are_resolved_together_in_columns() {
+        let mut storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let cx = Context::new(storage.view());
+        let root = cx
+            .column()
+            .size(Size::new(40, 100))
+            .child(cx.text("").height(10).flex(1))
+            .child(cx.text("").size(Size::new(12, 10)).flex(2))
+            .try_build()
+            .unwrap();
+        let mut tree = FrameTree::new(cx.storage.into_inner());
+        tree.layout(root, Constraints::max(Size::new(40, 100)));
+
+        let first = tree.node(root).child.unwrap();
+        let second = tree.node(first).sibling.unwrap();
+        assert_eq!(tree.node(first).layout.border_size, Size::new(40, 33));
+        assert_eq!(tree.node(second).layout.border_size, Size::new(12, 67));
+        assert_eq!(tree.node(second).layout.offset, Point::new(0, 33));
+    }
+
     #[test]
     fn asymmetric_borders_are_painted_inside_the_border_box() {
         let column = NodeKind::<Rgb565>::Div(Style {

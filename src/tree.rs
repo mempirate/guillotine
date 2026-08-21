@@ -15,6 +15,9 @@ use crate::{
     style::BoxStyle,
 };
 
+#[cfg(feature = "flexbox")]
+use crate::style::FlexItemStyle;
+
 /// A node in a [`FrameTree`], with pointers to child and sibling nodes.
 pub(crate) struct Node<C>
 where
@@ -34,6 +37,11 @@ where
 impl<C: PixelColor> Node<C> {
     pub(crate) const fn box_style(&self) -> BoxStyle {
         self.kind.box_style()
+    }
+
+    #[cfg(feature = "flexbox")]
+    pub(crate) const fn flex_item_style(&self) -> FlexItemStyle {
+        self.kind.flex_item_style()
     }
 
     pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
@@ -243,6 +251,14 @@ impl<C: PixelColor> NodeKind<C> {
         match self {
             Self::Div(style) => style.box_style(),
             Self::Text(text) => text.style.box_style(),
+        }
+    }
+
+    #[cfg(feature = "flexbox")]
+    pub(crate) const fn flex_item_style(&self) -> FlexItemStyle {
+        match self {
+            Self::Div(style) => style.flex_item_style(),
+            Self::Text(text) => text.style.flex_item_style(),
         }
     }
 

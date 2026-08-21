@@ -54,6 +54,22 @@ impl Constraints {
             max: Size::new(width.unwrap_or(self.max.width), height.unwrap_or(self.max.height)),
         }
     }
+
+    #[cfg(feature = "flexbox")]
+    /// Creates loose flex-item constraints with either axis optionally made exact.
+    fn flex_item(
+        direction: FlexDirection,
+        available_main: u32,
+        available_cross: u32,
+        exact_main: Option<u32>,
+        exact_cross: Option<u32>,
+    ) -> Self {
+        Self {
+            min: direction.size(exact_main.unwrap_or(0), exact_cross.unwrap_or(0)),
+            max: direction
+                .size(exact_main.unwrap_or(available_main), exact_cross.unwrap_or(available_cross)),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -237,8 +253,8 @@ where
         // Apply flexbox layout after all the other operations.
         #[cfg(feature = "flexbox")]
         if let Some((measurements, layout)) = pending_flex {
-            let measurements = if layout.align_items.is_stretch() {
-                self.stretch_items(index, content_size, &layout)
+            let measurements = if layout.align_items.is_stretch() || measurements.needs_flexing() {
+                self.grow_and_stretch_items(index, content_size, &layout, measurements)
             } else {
                 measurements
             };
@@ -304,6 +320,54 @@ struct FlexMeasurements {
     main: u32,
     cross: u32,
     count: u32,
+    /// Main-axis space occupied by gaps, margins, and flex bases.
+    flex_base_main: u32,
+    total_grow: u32,
+    has_zero_basis: bool,
+}
+
+#[cfg(feature = "flexbox")]
+#[derive(Clone, Copy)]
+/// Measurements needed to resolve one flex item.
+struct FlexItemMetrics {
+    outer_size: Size,
+    main: u32,
+    cross: u32,
+    /// Flex basis plus fixed main-axis margins.
+    base_main: u32,
+    grow: u32,
+    has_zero_basis: bool,
+    has_auto_cross_size: bool,
+}
+
+#[cfg(feature = "flexbox")]
+/// Distributes integer free space without losing remainder pixels.
+struct GrowDistribution {
+    free: u32,
+    total_grow: u32,
+    accumulated_grow: u32,
+    distributed: u32,
+}
+
+#[cfg(feature = "flexbox")]
+impl GrowDistribution {
+    const fn new(free: u32, total_grow: u32) -> Self {
+        Self { free, total_grow, accumulated_grow: 0, distributed: 0 }
+    }
+
+    const fn share(&mut self, grow: u32) -> u32 {
+        self.accumulated_grow = self.accumulated_grow.saturating_add(grow);
+
+        let distributed = if self.total_grow == 0 {
+            0
+        } else {
+            ((self.free as u64 * self.accumulated_grow as u64) / self.total_grow as u64) as u32
+        };
+        let share = distributed - self.distributed;
+        self.distributed = distributed;
+
+        share
+    }
 }
 
 #[cfg(feature = "flexbox")]
@@ -318,6 +382,21 @@ impl FlexMeasurements {
         self.main = self.main.saturating_add(main);
         self.cross = self.cross.max(cross);
         self.count = self.count.saturating_add(1);
+    }
+
+    const fn needs_flexing(&self) -> bool {
+        self.total_grow > 0 || self.has_zero_basis
+    }
+
+    fn add_measured(&mut self, item: FlexItemMetrics, direction: FlexDirection, gap: u32) {
+        if self.count > 0 {
+            self.flex_base_main = self.flex_base_main.saturating_add(gap);
+        }
+
+        self.flex_base_main = self.flex_base_main.saturating_add(item.base_main);
+        self.total_grow = self.total_grow.saturating_add(item.grow);
+        self.has_zero_basis |= item.has_zero_basis;
+        self.add(item.outer_size, direction, gap);
     }
 }
 
@@ -346,10 +425,7 @@ where
             // (with constraints pushing downwards).
             self.layout_node(item, constraints);
 
-            let size = self.node(item).layout.outer_size;
-
-            measurements.add(size, direction, gap);
-
+            measurements.add_measured(self.flex_item_metrics(item, direction), direction, gap);
             next = self.node(item).sibling;
         }
 
@@ -403,45 +479,76 @@ where
         }
     }
 
-    fn stretch_items(
+    fn grow_and_stretch_items(
         &mut self,
         parent: NodeIndex,
         content_size: Size,
         layout: &FlexLayout,
+        initial: FlexMeasurements,
     ) -> FlexMeasurements {
         let direction = layout.direction;
         let (main_available, cross_available) = direction.split(content_size);
         let (gap, _) = direction.split(layout.gap);
 
-        // Loose on the main axis, exact on the cross axis.
-        let constraints = Constraints {
-            min: direction.size(0, cross_available),
-            max: direction.size(main_available, cross_available),
-        };
+        let free = main_available.saturating_sub(initial.flex_base_main);
+        let mut growth = GrowDistribution::new(free, initial.total_grow);
 
-        let mut measurements = FlexMeasurements::default();
+        let mut resolved = FlexMeasurements::default();
         let mut next = self.node(parent).child;
 
         while let Some(item) = next {
-            let box_style = self.node(item).box_style();
-            let current_size = self.node(item).layout.outer_size;
-            let (_, current_cross) = direction.split(current_size);
+            let metrics = self.flex_item_metrics(item, direction);
+            let target_main = metrics.base_main.saturating_add(growth.share(metrics.grow));
 
-            let has_auto_cross_size = match direction {
-                FlexDirection::Row => box_style.height.is_none(),
-                FlexDirection::Column => box_style.width.is_none(),
-            };
+            let exact_main = (metrics.main != target_main).then_some(target_main);
+            let exact_cross = (layout.align_items.is_stretch()
+                && metrics.has_auto_cross_size
+                && metrics.cross != cross_available)
+                .then_some(cross_available);
 
-            if has_auto_cross_size && current_cross != cross_available {
-                self.layout_node(item, constraints);
+            if exact_main.is_some() || exact_cross.is_some() {
+                self.layout_node(
+                    item,
+                    Constraints::flex_item(
+                        direction,
+                        main_available,
+                        cross_available,
+                        exact_main,
+                        exact_cross,
+                    ),
+                );
             }
 
             let final_size = self.node(item).layout.outer_size;
-            measurements.add(final_size, direction, gap);
+            resolved.add(final_size, direction, gap);
 
             next = self.node(item).sibling;
         }
 
-        measurements
+        resolved
+    }
+
+    fn flex_item_metrics(&self, item: NodeIndex, direction: FlexDirection) -> FlexItemMetrics {
+        let node = self.node(item);
+        let box_style = node.box_style();
+        let flex = node.flex_item_style();
+        let outer_size = node.layout.outer_size;
+        let (main, cross) = direction.split(outer_size);
+        let (border_main, _) = direction.split(node.layout.border_size);
+        let (margin_main, _) = direction.split(box_style.margin.total_size());
+        let has_auto_cross_size = match direction {
+            FlexDirection::Row => box_style.height.is_none(),
+            FlexDirection::Column => box_style.width.is_none(),
+        };
+
+        FlexItemMetrics {
+            outer_size,
+            main,
+            cross,
+            base_main: margin_main.saturating_add(flex.flex_basis.resolve(border_main)),
+            grow: u32::from(flex.flex_grow),
+            has_zero_basis: flex.flex_basis.is_zero(),
+            has_auto_cross_size,
+        }
     }
 }

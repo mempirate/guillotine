@@ -33,18 +33,12 @@ impl Render for FlexboxShowcase {
             .child(
                 cx.row()
                     .height(48)
-                    .justify_content(JustifyContent::SpaceBetween)
+                    .gap(8)
                     .child(stat(cx, "DIRECTION", "ROW", CYAN))
                     .child(stat(cx, "ITEMS", "06", GREEN))
                     .child(stat(cx, "GAP", "02 PX", AMBER)),
             )
-            .child(
-                cx.row()
-                    .height(136)
-                    .justify_content(JustifyContent::SpaceBetween)
-                    .child(sidebar(cx))
-                    .child(justify_panel(cx)),
-            )
+            .child(cx.row().height(136).gap(8).child(sidebar(cx)).child(justify_panel(cx)))
     }
 }
 
@@ -76,7 +70,7 @@ fn stat(
         .padding((4, 6))
         .border(1)
         .border_color(accent)
-        .width(96)
+        .flex(1)
         .background(PANEL_RAISED)
         .justify_content(JustifyContent::SpaceBetween)
         .child(cx.text(label).font(Font::mono(&FONT_6X10)).text_color(MUTED))
@@ -121,7 +115,7 @@ fn justify_panel(
         .border(1)
         .border_color(EDGE)
         .gap(2)
-        .width(214)
+        .flex(1)
         .background(PANEL)
         .child(cx.text("JUSTIFY CONTENT").font(Font::mono(&FONT_6X10)).text_color(MUTED))
         .child(justify_lane(cx, "START", JustifyContent::Start))
@@ -140,8 +134,7 @@ fn justify_lane(
     cx.row()
         .padding((3, 5))
         .background(PANEL_RAISED)
-        .justify_content(JustifyContent::SpaceBetween)
-        .child(cx.text(label).font(Font::mono(&FONT_6X10)).text_color(Rgb565::WHITE))
+        .child(cx.text(label).flex_grow(1).font(Font::mono(&FONT_6X10)).text_color(Rgb565::WHITE))
         .child(
             cx.row()
                 .gap(2)
@@ -165,7 +158,9 @@ fn main() {
     let storage = FrameStorage::<Rgb565>::default();
     let mut ui = Ui::new(DirectTarget::new(display), storage).with_background(CANVAS);
 
+    let start = std::time::Instant::now();
     ui.render(&FlexboxShowcase).unwrap();
+    println!("render time: {:?}", start.elapsed());
 
     let output_settings = OutputSettingsBuilder::new().scale(3).build();
     let title = format!("Guillotine: {}", env!("CARGO_BIN_NAME"));

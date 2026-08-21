@@ -41,17 +41,17 @@ impl Render for PowerMonitor<'_> {
             .child(
                 cx.row()
                     .height(40)
-                    .justify_content(JustifyContent::SpaceBetween)
-                    .child(metric_card(cx, "VOLTAGE", self.voltage))
-                    .child(metric_card(cx, "CURRENT", self.current))
-                    .child(metric_card(cx, "REFRESH", "5 SEC")),
+                    .gap(2)
+                    .child(card(cx, "VOLTAGE", self.voltage))
+                    .child(card(cx, "CURRENT", self.current))
+                    .child(card(cx, "REFRESH", "5 SEC")),
             )
             .child(
                 cx.row()
                     .height(40)
-                    .justify_content(JustifyContent::SpaceBetween)
-                    .child(summary_card(cx, "ENERGY / RESET", self.energy))
-                    .child(summary_card(cx, "EST. COST", self.cost)),
+                    .gap(2)
+                    .child(card(cx, "ENERGY / RESET", self.energy))
+                    .child(card(cx, "EST. COST", self.cost)),
             )
     }
 }
@@ -85,20 +85,20 @@ fn live_power(
         .child(
             cx.text("LIVE LOAD")
                 .padding((0, 12))
-                .width(108)
+                .flex(1)
                 .font(Font::mono(&FONT_6X10))
                 .text_color(MUTED),
         )
         .child(
             cx.text(power)
                 .padding((0, 14))
-                .width(196)
+                .flex(2)
                 .font(Font::mono(&FONT_10X20))
                 .text_color(Rgb565::WHITE),
         )
 }
 
-fn metric_card(
+fn card(
     cx: &Context<'_>,
     label: &str,
     value: &str,
@@ -108,23 +108,7 @@ fn metric_card(
         .border(1)
         .border_color(EDGE)
         .background(PANEL)
-        .width(100)
-        .justify_content(JustifyContent::SpaceBetween)
-        .child(cx.text(label).font(Font::mono(&FONT_6X10)).text_color(MUTED))
-        .child(cx.text(value).font(Font::mono(&FONT_9X18_BOLD)).text_color(Rgb565::WHITE))
-}
-
-fn summary_card(
-    cx: &Context<'_>,
-    label: &str,
-    value: &str,
-) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = DivStyle> {
-    cx.column()
-        .padding((4, 6))
-        .border(1)
-        .border_color(EDGE)
-        .background(PANEL)
-        .width(151)
+        .flex(1)
         .justify_content(JustifyContent::SpaceBetween)
         .child(cx.text(label).font(Font::mono(&FONT_6X10)).text_color(MUTED))
         .child(cx.text(value).font(Font::mono(&FONT_9X18_BOLD)).text_color(Rgb565::WHITE))
@@ -144,7 +128,9 @@ fn main() {
     println!("Storage size: {}", storage.size());
 
     let mut ui = Ui::new(DirectTarget::new(display), storage).with_background(CANVAS);
+    let start = std::time::Instant::now();
     ui.render(&monitor).unwrap();
+    println!("Render time: {:?}", start.elapsed());
 
     let usage = ui.storage().usage();
     let cap = ui.storage().capacity();

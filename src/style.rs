@@ -158,6 +158,39 @@ impl BoxStyle {
     }
 }
 
+#[cfg(feature = "flexbox")]
+#[derive(Clone, Copy)]
+pub(crate) struct FlexItemStyle {
+    pub flex_grow: u16,
+    pub flex_basis: FlexBasis,
+}
+
+/// The initial main-axis size of a flex item before free space is distributed.
+#[cfg(feature = "flexbox")]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum FlexBasis {
+    /// The flex basis is determined by the content size.
+    #[default]
+    Auto,
+    /// The flex basis is 0.
+    Zero,
+}
+
+#[cfg(feature = "flexbox")]
+impl FlexBasis {
+    pub(crate) const fn resolve(self, auto: u32) -> u32 {
+        match self {
+            Self::Auto => auto,
+            Self::Zero => 0,
+        }
+    }
+
+    pub(crate) const fn is_zero(self) -> bool {
+        matches!(self, Self::Zero)
+    }
+}
+
 /// Common style type shared between all [`crate::Element`] variants.
 ///
 /// # Box model
@@ -203,6 +236,12 @@ pub struct Style<S: Default, C = Rgb565> {
     pub width: Option<u32>,
     /// Height of the border box.
     pub height: Option<u32>,
+    #[cfg(feature = "flexbox")]
+    /// Flex grow factor.
+    pub flex_grow: u16,
+    /// Flex basis.
+    #[cfg(feature = "flexbox")]
+    pub flex_basis: FlexBasis,
     /// Specific style properties for each element kind.
     pub specific: S,
 }
@@ -217,6 +256,10 @@ impl<S: Default, C> Default for Style<S, C> {
             background: None,
             width: None,
             height: None,
+            #[cfg(feature = "flexbox")]
+            flex_grow: 0,
+            #[cfg(feature = "flexbox")]
+            flex_basis: FlexBasis::Auto,
             specific: S::default(),
         }
     }
@@ -232,6 +275,11 @@ impl<S: Default, C> Style<S, C> {
             width: self.width,
             height: self.height,
         }
+    }
+
+    #[cfg(feature = "flexbox")]
+    pub(crate) const fn flex_item_style(&self) -> FlexItemStyle {
+        FlexItemStyle { flex_grow: self.flex_grow, flex_basis: self.flex_basis }
     }
 }
 
@@ -314,6 +362,28 @@ pub trait StyledElement: Sized {
     /// Sets the border color of the element.
     fn border_color(mut self, color: Self::Color) -> Self {
         self.style_mut().border_color = Some(color);
+        self
+    }
+
+    /// Sets the flex grow factor of the element.
+    #[cfg(feature = "flexbox")]
+    fn flex_grow(mut self, factor: u16) -> Self {
+        self.style_mut().flex_grow = factor;
+        self
+    }
+
+    /// Sets the flex basis of the element.
+    #[cfg(feature = "flexbox")]
+    fn flex_basis(mut self, flex_basis: FlexBasis) -> Self {
+        self.style_mut().flex_basis = flex_basis;
+        self
+    }
+
+    /// Sets a zero flex basis and the given grow factor.
+    #[cfg(feature = "flexbox")]
+    fn flex(mut self, factor: u16) -> Self {
+        self.style_mut().flex_grow = factor;
+        self.style_mut().flex_basis = FlexBasis::Zero;
         self
     }
 }

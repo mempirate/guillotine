@@ -33,7 +33,9 @@ fn main() {
 
     let mut ui = Ui::new(DirectTarget::new(display), storage);
 
+    let start = std::time::Instant::now();
     ui.render(&view).unwrap();
+    println!("render time: {:?}", start.elapsed());
 
     let output_settings = OutputSettingsBuilder::new().build();
     let title = format!("Guillotine: {}", env!("CARGO_BIN_NAME"));
