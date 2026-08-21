@@ -2,18 +2,18 @@
 
 [![CI](https://github.com/mempirate/guillotine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mempirate/guillotine/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/guillotine.svg)](https://crates.io/crates/guillotine)
+[![Downloads](https://img.shields.io/crates/dr/guillotine?label=downloads)](https://crates.io/crates/guillotine)
 [![Docs.rs](https://docs.rs/guillotine/badge.svg)](https://docs.rs/guillotine)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/mempirate/guillotine)
 
-A `no-std` graphical user interface framework for embedded devices prioritizing resource efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
-
-Works everywhere `embedded-graphics` works.
+A `no-std`, allocation-fre graphical user interface framework for embedded devices prioritizing efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui). Built with (and inherits compatibility from)
+[`embedded-graphics`](https://docs.rs/embedded-graphics/latest/embedded_graphics/).
 
 ## Demo
 
 A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board from the [`shellyctl`](https://github.com/mempirate/shellyctl) project:
 
-![Demo of a power consumption monitor UI](img/demo.jpeg)
+![Demo of a power consumption monitor UI](https://raw.githubusercontent.com/mempirate/guillotine/main/img/demo.jpeg)
 
 ## Quickstart
 
@@ -142,6 +142,30 @@ of your UI. `FrameStorage` exposes some methods to help you do that:
 > These buffers are only populated *after* calls to `render()`, and will contain the element tree and
 > text bytes for the currently rendered frame.
 
+## Layout
+
+By default, Guillotine supports a limited subset of the flexbox layout engine. Rows are start-aligned
+containers along the horizontal axis with support for gaps, and columns are their vertical counterpart.
+
+### Flexbox
+
+Support for `justify_content` and `align_items` is gated behind a `flexbox` feature and is turned off
+by default. The main reason is that these flexbox properties require the layout tree to be traversed
+twice, demanding extra compute and higher render latency.
+
+Some properties, like `AlignItems::Stretch`, currently have a complexity of `O(N x D)`,
+where `N` is the number of nodes and `D` is the tree depth. For small trees, this shouldn't be a problem,
+but keep it in mind if you have more complex layouts.
+
+Refer to [`flexbox.rs`](/examples/flexbox.rs) for a flexbox layout example:
+
+![Flexbox example](https://raw.githubusercontent.com/mempirate/guillotine/main/img/flexbox.png)
+
+### Grid
+Coming soon.
+
+## Features
+
 
 ## Core Concepts
 
@@ -253,17 +277,16 @@ pixel lengths. Guillotine doesn't currently support percentages, `auto`, logical
 margins, margin collapsing, per-edge border colors, or border styles. Adjacent margins in rows and
 columns add together.
 
-`Style::size` is the border-box size: padding and border are placed inside it, and margin is added
-outside it. The box grows to contain its padding and border when parent constraints allow.
+`size`, `width`, and `height` configure border-box dimensions: padding and border are placed inside
+them, and margin is added outside. Width and height are independent; an omitted dimension is sized
+automatically from the element's contents. Configured dimensions grow to contain padding and border
+when parent constraints allow.
 
 
 ## Examples
 
-To run the [examples](./examples), you need to enable the `simulator` feature. This pulls in a bundled [sdl2](https://github.com/Rust-SDL2/rust-sdl2) for opening windows. You will need cmake to compile it.
+See the [examples README](./examples).
 
-```sh
-cargo run --example power_monitor --features simulator
-```
 
 ## Why?
 
@@ -302,10 +325,34 @@ Additionally, I wanted to learn what it would take to build something like this.
 ### v0.1.0
 - [x] No alloc
   
-### v0.2.0
+### v0.2.1
 - [x] `framebuffer` feature with frame buffer support
 
+### v0.2.2
+- [ ] Refactored layout engine
+- [ ] Support for a subset of flexbox layout (`flexbox` feature)
+
+### v0.2.3
+- [ ] Support for [absolute positioning](https://taffylayout.com/docs/styling/position) 
+      (relative by default). Introduces a new explicit `position` property to `Style`.
+
+### v0.2.4
+- [ ] New elements
+  - [ ] Dialogs / Modals (floating containers)
+  - [ ] Charts
+  - [ ] Spinner (going to be interesting as this is essentially a self-rendering element). Will
+        probably require a global `frame_rate` to be set on the `Ui`. However, this would be a full
+        retained mode approach with an async polling loop. 
+        Another approach is to first implement incremental redrawing, and rely
+        on the caller to call `render()` at their chosen rate. However, each `render()` would do
+        a bunch of compute, so probably not super efficient?
+
 ### Backlog
+- [ ] Mirrored debugger / inspector:
+  - When plugged into an MCU, this feature launches an interactive inspector
+    on your host machine (think the Chrome inspector). Displays realtime total / per element
+    memory consumption, frame rendering times, boxes, frame buffer utilization etc. 
+    Builds on the embedded-graphics simulator.
 - [ ] Add memory usage for examples
   - cargo binutils for examples in CI (cargo size). This will detect regressions.
 - [ ] Documentation
@@ -314,18 +361,12 @@ Additionally, I wanted to learn what it would take to build something like this.
   - [ ] Frame rendering
   - [ ] Frame drawing
 - [ ] Stats for frame buffers (to determine optimal sizing)
-- [ ] Container gaps (flex from CSS)
 - [ ] Incremental drawing behind an `inremental` feature
-- [ ] New elements
-  - [ ] Dialogs / Modals (floating containers)
-  - [ ] Charts
-  - [ ] Spinner
-- [ ] Overflow behaviour:
-  - [x] Visible
-  - [ ] Clip
-- [ ] `profile` feature with `defmt` logs
+- [ ] Explicit behaviour:
+  - [x] Hidden
+  - [ ] Visible
+  - [ ] Scroll
 - [ ] Custom elements
-- [ ] Alignment
 - [ ] Support for interaction behind an `interaction` feature
 - [ ] Support interactive elements:
   - [ ] Button
@@ -335,3 +376,5 @@ Additionally, I wanted to learn what it would take to build something like this.
 - [Clay by Nic Barker](https://github.com/nicbarker/clay#retained-mode-rendering)
 - [Kolibri by Yandrik](https://github.com/Yandrik/kolibri)
 - [GPUI by Zed](https://github.com/zed-industries/zed/tree/main/crates/gpui)
+- [Taffy by Dioxus Labs](https://github.com/DioxusLabs/taffy)
+- [`embedded-gui` by Leftger](https://github.com/leftger/embedded-gui)

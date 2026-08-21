@@ -15,9 +15,14 @@ publish = ["crates-io"]
 
 [features]
 default = ["defmt", "framebuffer"]
+# Enables defmt formatting on exported types.
 defmt = ["dep:defmt", "embedded-graphics/defmt"]
+# Enables framebuffer rendering support.
 framebuffer = []
+# Enables full flexbox support at the expense of more compute per frame.
+flexbox = []
 
+# Enables the simulator backend for embedded-graphics.
 simulator = ["dep:embedded-graphics-simulator", "dep:sdl2"]
 
 [dependencies]
@@ -38,8 +43,12 @@ name = "binary"
 required-features = ["simulator"]
 
 [[example]]
+name = "flexbox"
+required-features = ["simulator", "flexbox"]
+
+[[example]]
 name = "power_monitor"
-required-features = ["simulator"]
+required-features = ["simulator", "flexbox"]
 
 [lints]
 rust.missing_docs = "warn"

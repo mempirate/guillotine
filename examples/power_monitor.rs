@@ -8,7 +8,10 @@ use embedded_graphics::{
     prelude::{RgbColor as _, Size},
 };
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, Window};
-use guillotine::{style::StyledElement, *};
+use guillotine::{
+    style::{AlignItems, JustifyContent, StyledElement},
+    *,
+};
 
 // A deliberately restrained palette: neutral surfaces and one status accent.
 const CANVAS: Rgb565 = Rgb565::new(2, 3, 4);
@@ -37,14 +40,16 @@ impl Render for PowerMonitor<'_> {
             .child(live_power(cx, self.power))
             .child(
                 cx.row()
-                    .gap(2)
+                    .height(40)
+                    .justify_content(JustifyContent::SpaceBetween)
                     .child(metric_card(cx, "VOLTAGE", self.voltage))
                     .child(metric_card(cx, "CURRENT", self.current))
                     .child(metric_card(cx, "REFRESH", "5 SEC")),
             )
             .child(
                 cx.row()
-                    .gap(2)
+                    .height(40)
+                    .justify_content(JustifyContent::SpaceBetween)
                     .child(summary_card(cx, "ENERGY / RESET", self.energy))
                     .child(summary_card(cx, "EST. COST", self.cost)),
             )
@@ -55,18 +60,13 @@ fn header(
     cx: &Context<'_>,
 ) -> impl ElementBuilder + StyledElement<Color = Rgb565, Specific = DivStyle> {
     cx.row()
-        .size(Size::new(304, 18))
-        .child(
-            cx.text("SHELLY POWER")
-                .size(Size::new(238, 18))
-                .font(Font::mono(&FONT_9X18_BOLD))
-                .text_color(Rgb565::WHITE),
-        )
+        .justify_content(JustifyContent::SpaceBetween)
+        .child(cx.text("SHELLY POWER").font(Font::mono(&FONT_9X18_BOLD)).text_color(Rgb565::WHITE))
         .child(
             cx.text("ONLINE")
                 .padding((4, 12))
                 .background(ACCENT)
-                .size(Size::new(66, 18))
+                .width(66)
                 .font(Font::mono(&FONT_6X10))
                 .text_color(CANVAS),
         )
@@ -80,18 +80,19 @@ fn live_power(
         .border((0, 0, 0, 2))
         .border_color(ACCENT)
         .background(PANEL_STRONG)
-        .size(Size::new(304, 44))
+        .height(44)
+        .align_items(AlignItems::Center)
         .child(
             cx.text("LIVE LOAD")
-                .padding((17, 12))
-                .size(Size::new(108, 42))
+                .padding((0, 12))
+                .width(108)
                 .font(Font::mono(&FONT_6X10))
                 .text_color(MUTED),
         )
         .child(
             cx.text(power)
-                .padding((11, 14))
-                .size(Size::new(196, 42))
+                .padding((0, 14))
+                .width(196)
                 .font(Font::mono(&FONT_10X20))
                 .text_color(Rgb565::WHITE),
         )
@@ -107,16 +108,10 @@ fn metric_card(
         .border(1)
         .border_color(EDGE)
         .background(PANEL)
-        .size(Size::new(100, 40))
-        .child(
-            cx.text(label).size(Size::new(86, 12)).font(Font::mono(&FONT_6X10)).text_color(MUTED),
-        )
-        .child(
-            cx.text(value)
-                .size(Size::new(86, 18))
-                .font(Font::mono(&FONT_9X18_BOLD))
-                .text_color(Rgb565::WHITE),
-        )
+        .width(100)
+        .justify_content(JustifyContent::SpaceBetween)
+        .child(cx.text(label).font(Font::mono(&FONT_6X10)).text_color(MUTED))
+        .child(cx.text(value).font(Font::mono(&FONT_9X18_BOLD)).text_color(Rgb565::WHITE))
 }
 
 fn summary_card(
@@ -129,16 +124,10 @@ fn summary_card(
         .border(1)
         .border_color(EDGE)
         .background(PANEL)
-        .size(Size::new(151, 40))
-        .child(
-            cx.text(label).size(Size::new(137, 12)).font(Font::mono(&FONT_6X10)).text_color(MUTED),
-        )
-        .child(
-            cx.text(value)
-                .size(Size::new(137, 18))
-                .font(Font::mono(&FONT_9X18_BOLD))
-                .text_color(Rgb565::WHITE),
-        )
+        .width(151)
+        .justify_content(JustifyContent::SpaceBetween)
+        .child(cx.text(label).font(Font::mono(&FONT_6X10)).text_color(MUTED))
+        .child(cx.text(value).font(Font::mono(&FONT_9X18_BOLD)).text_color(Rgb565::WHITE))
 }
 
 fn main() {
