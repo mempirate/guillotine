@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "guillotine"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "defmt 1.1.1",
  "embedded-graphics",

@@ -19,13 +19,16 @@ A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board from the [`shellyct
 
 ```rust,no_run
 use embedded_graphics::{
-    prelude::*, 
-    mock_display::MockDisplay, 
+    mono_font::ascii::{FONT_6X10, FONT_9X18_BOLD},
     pixelcolor::Rgb565,
-    mono_font::ascii::FONT_9X18_BOLD,
+    prelude::Size,
 };
+use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, Window};
+use guillotine::{style::JustifyContent, *};
 
-use guillotine::*; 
+const CANVAS: Rgb565 = Rgb565::new(2, 4, 6);
+const PANEL: Rgb565 = Rgb565::new(4, 9, 12);
+const ACCENT: Rgb565 = Rgb565::new(7, 47, 25);
 
 struct BasicView {
     greeting: &'static str,
@@ -35,12 +38,39 @@ impl Render for BasicView {
     // Render lets you declaratively build your UI tree.
     fn render(&self, cx: &Context<'_>) -> impl ElementBuilder {
         cx.column()
-            .padding(10)
-            .margin(10)
-            .border(2)
-            .border_color(Rgb565::BLUE)
-            .child(cx.text(self.greeting).background(Rgb565::RED).margin(5))
-            .child(cx.text("GUILLOTINE").margin(5).font(Font::mono(&FONT_9X18_BOLD)))
+            .size(Size::new(320, 172))
+            .padding(12)
+            .gap(8)
+            .background(CANVAS)
+            .justify_content(JustifyContent::Center)
+            .child(
+                cx.row()
+                    .child(cx.text("GUILLOTINE").flex_grow(1).font(Font::mono(&FONT_9X18_BOLD)))
+                    .child(
+                        cx.text("READY")
+                            .padding((4, 9))
+                            .background(ACCENT)
+                            .font(Font::mono(&FONT_6X10)),
+                    ),
+            )
+            .child(
+                cx.row()
+                    .gap(8)
+                    .child(
+                        cx.text(self.greeting)
+                            .font(Font::mono(&FONT_6X10))
+                            .flex(3)
+                            .padding(10)
+                            .background(PANEL),
+                    )
+                    .child(
+                        cx.text("7 nodes, 54 bytes")
+                            .font(Font::mono(&FONT_6X10))
+                            .flex(2)
+                            .padding(6)
+                            .background(ACCENT),
+                    ),
+            )
     }
 }
 
@@ -62,7 +92,6 @@ fn main() {
     // Render the view
     ui.render(&view);
 }
-
 ```
 
 ## Frame Buffers
@@ -149,9 +178,14 @@ containers along the horizontal axis with support for gaps, and columns are thei
 
 ### Flexbox
 
-Support for `justify_content` and `align_items` is gated behind a `flexbox` feature and is turned off
-by default. The main reason is that these flexbox properties require the layout tree to be traversed
+More complete flexbox support is gated behind a `flexbox` feature and is turned off by default. 
+The main reason is that these flexbox properties require the layout tree to be traversed
 twice, demanding extra compute and higher render latency.
+
+These properties are:
+- Container: `justify-content`
+- Container: `align-items`
+- Item: `flex_grow`
 
 Some properties, like `AlignItems::Stretch`, currently have a complexity of `O(N x D)`,
 where `N` is the number of nodes and `D` is the tree depth. For small trees, this shouldn't be a problem,
@@ -160,12 +194,6 @@ but keep it in mind if you have more complex layouts.
 Refer to [`flexbox.rs`](/examples/flexbox.rs) for a flexbox layout example:
 
 ![Flexbox example](https://raw.githubusercontent.com/mempirate/guillotine/main/img/flexbox.png)
-
-### Grid
-Coming soon.
-
-## Features
-
 
 ## Core Concepts
 
@@ -329,8 +357,8 @@ Additionally, I wanted to learn what it would take to build something like this.
 - [x] `framebuffer` feature with frame buffer support
 
 ### v0.2.2
-- [ ] Refactored layout engine
-- [ ] Support for a subset of flexbox layout (`flexbox` feature)
+- [x] Refactored layout engine
+- [x] Support flexbox layout (`flexbox` feature)
 
 ### v0.2.3
 - [ ] Support for [absolute positioning](https://taffylayout.com/docs/styling/position) 
