@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[cfg(feature = "flexbox")]
-use crate::style::JustifyContent;
+use crate::style::{AlignItems, JustifyContent};
 
 /// Style for a div element.
 #[derive(Default, Clone, PartialEq, Eq)]
@@ -23,6 +23,9 @@ pub struct DivStyle {
     #[cfg(feature = "flexbox")]
     /// Justification of the flex items along the main axis.
     pub(crate) justify_content: JustifyContent,
+    #[cfg(feature = "flexbox")]
+    /// Alignment of the flex items along the cross axis.
+    pub(crate) align_items: AlignItems,
 }
 
 pub struct DivBuilder<'cx, 'frame, C: PixelColor> {
@@ -143,6 +146,13 @@ where
     /// Sets the justification of the flex items along the main axis.
     fn justify_content(mut self, justify_content: JustifyContent) -> Self {
         self.style_mut().specific.justify_content = justify_content;
+        self
+    }
+
+    #[cfg(feature = "flexbox")]
+    /// Sets the alignment of the flex items along the cross axis.
+    fn align_items(mut self, align_items: AlignItems) -> Self {
+        self.style_mut().specific.align_items = align_items;
         self
     }
 }

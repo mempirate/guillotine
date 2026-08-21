@@ -642,6 +642,73 @@ mod tests {
     }
 
     #[test]
+    fn width_and_height_leave_the_other_axis_automatic() {
+        let mut width_storage = FrameStorage::<Rgb565, 2, 1>::default();
+        let width_cx = Context::new(width_storage.view());
+        let width_root = width_cx
+            .column()
+            .width(30)
+            .child(width_cx.text("").size(Size::new(10, 7)))
+            .try_build()
+            .unwrap();
+        let mut width_tree = FrameTree::new(width_cx.storage.into_inner());
+        width_tree.layout(width_root, Constraints::max(Size::new(100, 100)));
+
+        assert_eq!(width_tree.node(width_root).layout.border_size, Size::new(30, 7));
+
+        let mut height_storage = FrameStorage::<Rgb565, 2, 1>::default();
+        let height_cx = Context::new(height_storage.view());
+        let height_root = height_cx
+            .row()
+            .height(25)
+            .child(height_cx.text("").size(Size::new(10, 7)))
+            .try_build()
+            .unwrap();
+        let mut height_tree = FrameTree::new(height_cx.storage.into_inner());
+        height_tree.layout(height_root, Constraints::max(Size::new(100, 100)));
+
+        assert_eq!(height_tree.node(height_root).layout.border_size, Size::new(10, 25));
+    }
+
+    #[cfg(feature = "flexbox")]
+    #[test]
+    fn stretch_only_changes_an_automatic_cross_axis() {
+        let mut row_storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let row_cx = Context::new(row_storage.view());
+        let row = row_cx
+            .row()
+            .size(Size::new(100, 40))
+            .child(row_cx.text("").width(10))
+            .child(row_cx.text("").size(Size::new(10, 12)))
+            .try_build()
+            .unwrap();
+        let mut row_tree = FrameTree::new(row_cx.storage.into_inner());
+        row_tree.layout(row, Constraints::max(Size::new(100, 40)));
+
+        let row_auto = row_tree.node(row).child.unwrap();
+        let row_explicit = row_tree.node(row_auto).sibling.unwrap();
+        assert_eq!(row_tree.node(row_auto).layout.border_size, Size::new(10, 40));
+        assert_eq!(row_tree.node(row_explicit).layout.border_size, Size::new(10, 12));
+
+        let mut column_storage = FrameStorage::<Rgb565, 3, 1>::default();
+        let column_cx = Context::new(column_storage.view());
+        let column = column_cx
+            .column()
+            .size(Size::new(40, 100))
+            .child(column_cx.text("").height(10))
+            .child(column_cx.text("").size(Size::new(12, 10)))
+            .try_build()
+            .unwrap();
+        let mut column_tree = FrameTree::new(column_cx.storage.into_inner());
+        column_tree.layout(column, Constraints::max(Size::new(40, 100)));
+
+        let column_auto = column_tree.node(column).child.unwrap();
+        let column_explicit = column_tree.node(column_auto).sibling.unwrap();
+        assert_eq!(column_tree.node(column_auto).layout.border_size, Size::new(40, 10));
+        assert_eq!(column_tree.node(column_explicit).layout.border_size, Size::new(12, 10));
+    }
+
+    #[test]
     fn asymmetric_borders_are_painted_inside_the_border_box() {
         let column = NodeKind::<Rgb565>::Div(Style {
             border: Insets::new(1, 2, 3, 4),

@@ -18,6 +18,7 @@ pub(crate) struct Constraints {
 
 impl Constraints {
     /// Returns [`Constraints`] that is exact in both dimensions.
+    #[cfg(test)]
     pub(crate) const fn exact(size: Size) -> Self {
         Self { min: size, max: size }
     }
@@ -41,6 +42,17 @@ impl Constraints {
 
     pub(crate) const fn deflate(self, by: Size) -> Self {
         Self { min: self.min.saturating_sub(by), max: self.max.saturating_sub(by) }
+    }
+
+    /// Makes configured dimensions exact while preserving the constraints of automatic axes.
+    pub(crate) fn with_exact_dimensions(self, width: Option<u32>, height: Option<u32>) -> Self {
+        let width = width.map(|width| width.clamp(self.min.width, self.max.width));
+        let height = height.map(|height| height.clamp(self.min.height, self.max.height));
+
+        Self {
+            min: Size::new(width.unwrap_or(self.min.width), height.unwrap_or(self.min.height)),
+            max: Size::new(width.unwrap_or(self.max.width), height.unwrap_or(self.max.height)),
+        }
     }
 }
 
@@ -112,12 +124,13 @@ impl FlexDirection {
     }
 
     /// Creates a physical offset from a logical main-axis offset.
-    const fn offset(self, main: u32) -> Point {
+    const fn offset(self, main: u32, cross: u32) -> Point {
         let main = to_i32(main);
+        let cross = to_i32(cross);
 
         match self {
-            Self::Row => Point::new(main, 0),
-            Self::Column => Point::new(0, main),
+            Self::Row => Point::new(main, cross),
+            Self::Column => Point::new(cross, main),
         }
     }
 
@@ -130,7 +143,7 @@ impl FlexDirection {
     }
 }
 
-/// Helper type to avoid borrows while layout_children mutates children.
+/// Helper type to avoid borrows while `layout_children` mutates children.
 enum ContentLayout {
     /// Flexbox layout.
     Flex(FlexLayout),
@@ -190,12 +203,13 @@ where
 
             // A configured size describes the border box, but it grows to fit border and padding
             // when the parent constraints allow it.
-            let desired_border_size = box_style.size.map_or(natural_border_size, |size| {
-                Size::new(
-                    size.width.max(content_inset_size.width),
-                    size.height.max(content_inset_size.height),
-                )
-            });
+            let desired_border_size = Size::new(
+                box_style.width.unwrap_or(natural_border_size.width).max(content_inset_size.width),
+                box_style
+                    .height
+                    .unwrap_or(natural_border_size.height)
+                    .max(content_inset_size.height),
+            );
 
             border_constraints.constrain(desired_border_size)
         };
@@ -223,6 +237,12 @@ where
         // Apply flexbox layout after all the other operations.
         #[cfg(feature = "flexbox")]
         if let Some((measurements, layout)) = pending_flex {
+            let measurements = if layout.align_items.is_stretch() {
+                self.stretch_items(index, content_size, &layout)
+            } else {
+                measurements
+            };
+
             self.position_items(index, content_size, &layout, measurements);
         }
     }
@@ -259,7 +279,7 @@ where
             let (child_main, child_cross) = direction.split(size);
 
             // Calculate the next offset based on the main cursor.
-            let offset = direction.offset(main);
+            let offset = direction.offset(main, 0);
             self.node_mut(child).layout.set_offset(offset);
 
             main = main.saturating_add(child_main);
@@ -284,6 +304,21 @@ struct FlexMeasurements {
     main: u32,
     cross: u32,
     count: u32,
+}
+
+#[cfg(feature = "flexbox")]
+impl FlexMeasurements {
+    fn add(&mut self, size: Size, direction: FlexDirection, gap: u32) {
+        let (main, cross) = direction.split(size);
+
+        if self.count > 0 {
+            self.main = self.main.saturating_add(gap);
+        }
+
+        self.main = self.main.saturating_add(main);
+        self.cross = self.cross.max(cross);
+        self.count = self.count.saturating_add(1);
+    }
 }
 
 #[cfg(feature = "flexbox")]
@@ -312,16 +347,8 @@ where
             self.layout_node(item, constraints);
 
             let size = self.node(item).layout.outer_size;
-            // Get the child's main and cross sizes based on direction.
-            let (child_main, child_cross) = direction.split(size);
 
-            if measurements.count > 0 {
-                measurements.main = measurements.main.saturating_add(gap);
-            }
-
-            measurements.main = measurements.main.saturating_add(child_main);
-            measurements.cross = measurements.cross.max(child_cross);
-            measurements.count = measurements.count.saturating_add(1);
+            measurements.add(size, direction, gap);
 
             next = self.node(item).sibling;
         }
@@ -341,25 +368,31 @@ where
         let direction = layout.direction;
 
         // Get the available space for the items based on direction.
-        let (available, _) = direction.split(content_size);
+        let (main_available, cross_available) = direction.split(content_size);
         // Get the gap size based on direction.
         let (gap, _) = direction.split(layout.gap);
-        let free = available.saturating_sub(measurements.main);
+
+        let main_free = main_available.saturating_sub(measurements.main);
 
         let mut cursor = 0u32;
         let mut index = 0;
         let mut next = self.node(parent).child;
 
         while let Some(item) = next {
-            // Calculate the value to shift the offset by
-            let shift = layout.justify_content.shift(free, index, measurements.count);
-            let offset = direction.offset(cursor.saturating_add(shift));
+            let size = self.node(item).layout.outer_size;
+            let (item_main, item_cross) = direction.split(size);
+
+            // Calculate the values to shift the offset by along both axes
+            let main_shift = layout.justify_content.shift(main_free, index, measurements.count);
+
+            let cross_free = cross_available.saturating_sub(item_cross);
+            let cross_shift = layout.align_items.shift(cross_free);
+
+            let offset = direction.offset(cursor.saturating_add(main_shift), cross_shift);
 
             self.node_mut(item).layout.set_offset(offset);
 
-            let size = self.node(item).layout.outer_size;
-            cursor = cursor.saturating_add(direction.split(size).0);
-
+            cursor = cursor.saturating_add(item_main);
             next = self.node(item).sibling;
 
             if next.is_some() {
@@ -368,5 +401,47 @@ where
 
             index += 1;
         }
+    }
+
+    fn stretch_items(
+        &mut self,
+        parent: NodeIndex,
+        content_size: Size,
+        layout: &FlexLayout,
+    ) -> FlexMeasurements {
+        let direction = layout.direction;
+        let (main_available, cross_available) = direction.split(content_size);
+        let (gap, _) = direction.split(layout.gap);
+
+        // Loose on the main axis, exact on the cross axis.
+        let constraints = Constraints {
+            min: direction.size(0, cross_available),
+            max: direction.size(main_available, cross_available),
+        };
+
+        let mut measurements = FlexMeasurements::default();
+        let mut next = self.node(parent).child;
+
+        while let Some(item) = next {
+            let box_style = self.node(item).box_style();
+            let current_size = self.node(item).layout.outer_size;
+            let (_, current_cross) = direction.split(current_size);
+
+            let has_auto_cross_size = match direction {
+                FlexDirection::Row => box_style.height.is_none(),
+                FlexDirection::Column => box_style.width.is_none(),
+            };
+
+            if has_auto_cross_size && current_cross != cross_available {
+                self.layout_node(item, constraints);
+            }
+
+            let final_size = self.node(item).layout.outer_size;
+            measurements.add(final_size, direction, gap);
+
+            next = self.node(item).sibling;
+        }
+
+        measurements
     }
 }

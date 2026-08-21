@@ -124,7 +124,8 @@ pub(crate) struct BoxStyle {
     pub margin: Insets,
     pub border: Insets,
     pub padding: Insets,
-    pub size: Option<Size>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 impl BoxStyle {
@@ -140,20 +141,13 @@ impl BoxStyle {
         let border_constraints = self.border_constraints(constraints);
         let content_size = self.content_insets().total_size();
 
-        let border_constraints = match self.size {
-            Some(size) => {
-                // `size` describes the border box. Like CSS `border-box`, it grows to the minimum
-                // needed by its padding and border unless hard parent constraints prevent that.
-                let desired = Size::new(
-                    size.width.max(content_size.width),
-                    size.height.max(content_size.height),
-                );
-                let border_size = border_constraints.constrain(desired);
-
-                Constraints::exact(border_size)
-            }
-            None => border_constraints,
-        };
+        // Configured dimensions describe the border box. Like CSS `border-box`, each configured
+        // axis grows to contain its padding and border unless hard parent constraints prevent it.
+        // An automatic axis keeps the constraints supplied by the parent.
+        let border_constraints = border_constraints.with_exact_dimensions(
+            self.width.map(|width| width.max(content_size.width)),
+            self.height.map(|height| height.max(content_size.height)),
+        );
 
         border_constraints.deflate(content_size).loosen()
     }
@@ -187,10 +181,12 @@ impl BoxStyle {
 /// edges and accept CSS-like one-to-four-value shorthands through [`StyledElement`]. Adjacent
 /// margins in rows and columns add together; they do not collapse.
 ///
-/// [`Self::size`] sets the border-box size. Padding and border are placed inside that size, while
-/// margin is added outside it. A configured border box grows to contain its padding and border
-/// when parent constraints allow. Guillotine supports non-negative pixel insets only, with one
-/// border color and no border styles.
+/// [`StyledElement::size`], [`StyledElement::width`], and [`StyledElement::height`] configure the
+/// border box. Padding and border are placed inside configured dimensions, while margin is added
+/// outside them. A configured dimension grows to contain its padding and border when parent
+/// constraints allow. An unconfigured dimension is sized automatically from the element's
+/// contents. Guillotine supports non-negative pixel insets only, with one border color and no
+/// border styles.
 #[derive(PartialEq, Eq)]
 pub struct Style<S: Default, C = Rgb565> {
     /// Margin insets: transparent space outside the border box.
@@ -203,8 +199,10 @@ pub struct Style<S: Default, C = Rgb565> {
     pub border_color: Option<C>,
     /// Background color painted across the complete border box, beneath the border.
     pub background: Option<C>,
-    /// Size of the border box.
-    pub size: Option<Size>,
+    /// Width of the border box.
+    pub width: Option<u32>,
+    /// Height of the border box.
+    pub height: Option<u32>,
     /// Specific style properties for each element kind.
     pub specific: S,
 }
@@ -217,7 +215,8 @@ impl<S: Default, C> Default for Style<S, C> {
             border: Insets::ZERO,
             border_color: None,
             background: None,
-            size: None,
+            width: None,
+            height: None,
             specific: S::default(),
         }
     }
@@ -230,7 +229,8 @@ impl<S: Default, C> Style<S, C> {
             margin: self.margin,
             padding: self.padding,
             border: self.border,
-            size: self.size,
+            width: self.width,
+            height: self.height,
         }
     }
 }
@@ -294,7 +294,20 @@ pub trait StyledElement: Sized {
 
     /// Sets the size of the element's border box.
     fn size(mut self, size: Size) -> Self {
-        self.style_mut().size = Some(size);
+        self.style_mut().width = Some(size.width);
+        self.style_mut().height = Some(size.height);
+        self
+    }
+
+    /// Sets the width of the element's border box.
+    fn width(mut self, width: u32) -> Self {
+        self.style_mut().width = Some(width);
+        self
+    }
+
+    /// Sets the height of the element's border box.
+    fn height(mut self, height: u32) -> Self {
+        self.style_mut().height = Some(height);
         self
     }
 
@@ -319,8 +332,8 @@ pub enum FlexDirection {
 impl From<&'static str> for FlexDirection {
     fn from(value: &'static str) -> Self {
         match value {
-            "row" => FlexDirection::Row,
-            "column" => FlexDirection::Column,
+            "row" => Self::Row,
+            "column" => Self::Column,
             _ => panic!("invalid flex direction: {}", value),
         }
     }
@@ -351,20 +364,53 @@ pub enum JustifyContent {
 impl JustifyContent {
     /// Calculates the shift of an item along the main axis based on the justify content strategy,
     /// distributed from the free space.
-    pub(crate) fn shift(&self, free: u32, index: u32, count: u32) -> u32 {
+    pub(crate) const fn shift(&self, free: u32, index: u32, count: u32) -> u32 {
         match self {
-            JustifyContent::Start => 0,
-            JustifyContent::End => free,
-            JustifyContent::Center => free / 2,
-            JustifyContent::SpaceBetween if count > 1 => Self::ratio(free, index, count - 1),
-            JustifyContent::SpaceAround if count > 0 => Self::ratio(free, 2 * index + 1, 2 * count),
-            JustifyContent::SpaceEvenly => Self::ratio(free, index + 1, count + 1),
-            Self::SpaceBetween | Self::SpaceAround => 0,
+            Self::End => free,
+            Self::Center => free / 2,
+            Self::SpaceBetween if count > 1 => Self::ratio(free, index, count - 1),
+            Self::SpaceAround if count > 0 => Self::ratio(free, 2 * index + 1, 2 * count),
+            Self::SpaceEvenly => Self::ratio(free, index + 1, count + 1),
+            Self::Start | Self::SpaceBetween | Self::SpaceAround => 0,
         }
     }
 
-    fn ratio(space: u32, num: u32, denom: u32) -> u32 {
+    const fn ratio(space: u32, num: u32, denom: u32) -> u32 {
         ((space as u64 * num as u64) / denom as u64) as u32
+    }
+}
+
+/// Alignment of the flex items along the cross axis (the axis perpendicular to the main axis).
+/// Think of this as the justify-content equivalent for the cross axis.
+#[cfg(feature = "flexbox")]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum AlignItems {
+    /// Stretch to fill the container's cross size (default).
+    #[default]
+    Stretch,
+    /// Align items at the start of the cross axis.
+    Start,
+    /// Align items at the end of the cross axis.
+    End,
+    /// Align items at the center of the cross axis.
+    Center,
+}
+
+#[cfg(feature = "flexbox")]
+impl AlignItems {
+    /// Calculates the shift of an item along the cross axis based on the align items strategy,
+    /// distributed from the free space.
+    pub(crate) const fn shift(&self, free: u32) -> u32 {
+        match self {
+            Self::Stretch | Self::Start => 0,
+            Self::End => free,
+            Self::Center => free / 2,
+        }
+    }
+
+    pub(crate) const fn is_stretch(&self) -> bool {
+        matches!(self, Self::Stretch)
     }
 }
 
@@ -378,15 +424,20 @@ pub(crate) struct FlexLayout {
     #[cfg(feature = "flexbox")]
     /// Justification of the flex items along the main axis.
     pub justify_content: JustifyContent,
+    #[cfg(feature = "flexbox")]
+    /// Alignment of the flex items along the cross axis.
+    pub align_items: AlignItems,
 }
 
 impl From<DivStyle> for FlexLayout {
     fn from(style: DivStyle) -> Self {
-        FlexLayout {
+        Self {
             direction: style.direction,
             gap: style.gap,
             #[cfg(feature = "flexbox")]
             justify_content: style.justify_content,
+            #[cfg(feature = "flexbox")]
+            align_items: style.align_items,
         }
     }
 }
