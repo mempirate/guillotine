@@ -9,6 +9,9 @@ use crate::{
     tree::{Node, NodeKind},
 };
 
+#[cfg(feature = "flexbox")]
+use crate::style::JustifyContent;
+
 /// Style for a div element.
 #[derive(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -17,6 +20,9 @@ pub struct DivStyle {
     pub(crate) gap: Size,
     /// Flex direction.
     pub(crate) direction: FlexDirection,
+    #[cfg(feature = "flexbox")]
+    /// Justification of the flex items along the main axis.
+    pub(crate) justify_content: JustifyContent,
 }
 
 pub struct DivBuilder<'cx, 'frame, C: PixelColor> {
@@ -130,6 +136,13 @@ where
     /// Sets the flex direction of the container.
     fn flex_direction(mut self, direction: FlexDirection) -> Self {
         self.style_mut().specific.direction = direction;
+        self
+    }
+
+    #[cfg(feature = "flexbox")]
+    /// Sets the justification of the flex items along the main axis.
+    fn justify_content(mut self, justify_content: JustifyContent) -> Self {
+        self.style_mut().specific.justify_content = justify_content;
         self
     }
 }

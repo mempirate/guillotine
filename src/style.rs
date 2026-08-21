@@ -305,7 +305,7 @@ pub trait StyledElement: Sized {
     }
 }
 
-/// Direction of the flex layout, either horizontally (row) or vertically (column).
+/// Direction or axis of the flex layout, either horizontally (row) or vertically (column).
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum FlexDirection {
@@ -326,6 +326,48 @@ impl From<&'static str> for FlexDirection {
     }
 }
 
+/// Justification of the flex items along the main axis.
+#[cfg(feature = "flexbox")]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum JustifyContent {
+    /// Items are packed at the start of the main axis.
+    #[default]
+    Start,
+    /// Items are packed at the end of the main axis.
+    End,
+    /// Items are centered along the main axis.
+    Center,
+    /// Items are packed with equal space between them, with the first item at the start and the
+    /// last item at the end.
+    SpaceBetween,
+    /// Items are packed with equal space around them.
+    SpaceAround,
+    /// Items are packed with equal space evenly around them (including near the edges).
+    SpaceEvenly,
+}
+
+#[cfg(feature = "flexbox")]
+impl JustifyContent {
+    /// Calculates the shift of an item along the main axis based on the justify content strategy,
+    /// distributed from the free space.
+    pub(crate) fn shift(&self, free: u32, index: u32, count: u32) -> u32 {
+        match self {
+            JustifyContent::Start => 0,
+            JustifyContent::End => free,
+            JustifyContent::Center => free / 2,
+            JustifyContent::SpaceBetween if count > 1 => Self::ratio(free, index, count - 1),
+            JustifyContent::SpaceAround if count > 0 => Self::ratio(free, 2 * index + 1, 2 * count),
+            JustifyContent::SpaceEvenly => Self::ratio(free, index + 1, count + 1),
+            Self::SpaceBetween | Self::SpaceAround => 0,
+        }
+    }
+
+    fn ratio(space: u32, num: u32, denom: u32) -> u32 {
+        ((space as u64 * num as u64) / denom as u64) as u32
+    }
+}
+
 /// Flexbox layout properties.
 #[derive(PartialEq, Eq)]
 pub(crate) struct FlexLayout {
@@ -333,11 +375,19 @@ pub(crate) struct FlexLayout {
     pub direction: FlexDirection,
     /// Spacing between flex items.
     pub gap: Size,
+    #[cfg(feature = "flexbox")]
+    /// Justification of the flex items along the main axis.
+    pub justify_content: JustifyContent,
 }
 
 impl From<DivStyle> for FlexLayout {
     fn from(style: DivStyle) -> Self {
-        FlexLayout { direction: style.direction, gap: style.gap }
+        FlexLayout {
+            direction: style.direction,
+            gap: style.gap,
+            #[cfg(feature = "flexbox")]
+            justify_content: style.justify_content,
+        }
     }
 }
 

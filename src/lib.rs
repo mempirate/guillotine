@@ -545,7 +545,11 @@ mod tests {
             border: 1.into(),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
-            specific: DivStyle { gap: Size::zero(), direction: FlexDirection::Column },
+            specific: DivStyle {
+                gap: Size::zero(),
+                direction: FlexDirection::Column,
+                ..Default::default()
+            },
             ..Default::default()
         });
         let layout = layout::BoxLayout {
@@ -643,7 +647,7 @@ mod tests {
             border: Insets::new(1, 2, 3, 4),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
-            specific: DivStyle { gap: Size::zero(), direction: FlexDirection::Column },
+            specific: DivStyle { direction: FlexDirection::Column, ..Default::default() },
             ..Style::default()
         });
         let layout = layout::BoxLayout {
@@ -670,7 +674,7 @@ mod tests {
             border: (1, 2, 1, 2).into(),
             border_color: Some(BinaryColor::On),
             background: Some(BinaryColor::Off),
-            specific: DivStyle { gap: Size::zero(), direction: FlexDirection::Column },
+            specific: DivStyle { direction: FlexDirection::Column, ..Default::default() },
             ..Style::default()
         });
         let layout = layout::BoxLayout {

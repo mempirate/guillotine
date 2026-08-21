@@ -130,6 +130,14 @@ impl FlexDirection {
     }
 }
 
+/// Helper type to avoid borrows while layout_children mutates children.
+enum ContentLayout {
+    /// Flexbox layout.
+    Flex(FlexLayout),
+    // A leaf with an inherent size.
+    Leaf(Size),
+}
+
 impl<'frame, C> FrameTree<'frame, C>
 where
     C: PixelColor,
@@ -149,22 +157,28 @@ where
 
         let content_constraints = box_style.content_constraints(constraints);
 
-        // Determine the content's intrinsic size without retaining a
-        // borrow of `self.nodes[index]` while layout_children mutates children.
-        enum ContentLayout {
-            /// Flexbox layout.
-            Flex(FlexLayout),
-            // A leaf with an inherent size.
-            Leaf(Size),
-        }
-
         let content_layout = match &self.node(index).kind {
             NodeKind::Div(style) => ContentLayout::Flex(style.specific.clone().into()),
             NodeKind::Text(text) => ContentLayout::Leaf(content_constraints.constrain(text.size)),
         };
 
+        #[cfg(feature = "flexbox")]
+        let mut pending_flex = None;
+
         let intrinsic_content_size = match content_layout {
+            #[cfg(not(feature = "flexbox"))]
             ContentLayout::Flex(layout) => self.layout_children(index, content_constraints, layout),
+            #[cfg(feature = "flexbox")]
+            ContentLayout::Flex(layout) => {
+                // Run the double pass flexbox layout algorithm: measure first, then position.
+                let measurements = self.measure_items(index, content_constraints, &layout);
+
+                // This is the intrinsic size of the content, before any flexbox layout is applied.
+                let intrinsic = layout.direction.size(measurements.main, measurements.cross);
+                pending_flex = Some((measurements, layout));
+
+                intrinsic
+            }
             ContentLayout::Leaf(size) => size,
         };
 
@@ -205,15 +219,22 @@ where
             border_size,
             content_size,
         };
+
+        // Apply flexbox layout after all the other operations.
+        #[cfg(feature = "flexbox")]
+        if let Some((measurements, layout)) = pending_flex {
+            self.position_items(index, content_size, &layout, measurements);
+        }
     }
 
     /// Lays out the container at `index` along `axis`:
     /// - Traverses the children and sets their offsets.
     /// - Sums the children's sizes on the main axis and takes their maximum size on the cross axis.
     /// - Returns the constrained intrinsic size.
+    #[cfg(not(feature = "flexbox"))]
     fn layout_children(
         &mut self,
-        index: NodeIndex,
+        parent: NodeIndex,
         constraints: Constraints,
         layout: FlexLayout,
     ) -> Size {
@@ -226,23 +247,25 @@ where
         let mut cross: u32 = 0;
 
         // Get the optional child.
-        let mut next = self.node(index).child;
+        let mut next = self.node(parent).child;
 
-        while let Some(next_idx) = next {
-            self.layout_node(next_idx, constraints);
+        while let Some(child) = next {
+            // First we lay out the child node, as layout calculations flow upwards
+            // (with constraints pushing downwards).
+            self.layout_node(child, constraints);
 
-            let size = self.node(next_idx).layout.outer_size;
+            let size = self.node(child).layout.outer_size;
             // Get the child's main and cross sizes based on direction.
             let (child_main, child_cross) = direction.split(size);
 
             // Calculate the next offset based on the main cursor.
             let offset = direction.offset(main);
-            self.node_mut(next_idx).layout.set_offset(offset);
+            self.node_mut(child).layout.set_offset(offset);
 
             main = main.saturating_add(child_main);
             cross = cross.max(child_cross);
 
-            next = self.node(next_idx).sibling;
+            next = self.node(child).sibling;
 
             // Only add the gap if there's a next sibling.
             if next.is_some() {
@@ -251,5 +274,99 @@ where
         }
 
         constraints.constrain(direction.size(main, cross))
+    }
+}
+
+/// The measurements of a flex container's children.
+#[cfg(feature = "flexbox")]
+#[derive(Clone, Copy, Default)]
+struct FlexMeasurements {
+    main: u32,
+    cross: u32,
+    count: u32,
+}
+
+#[cfg(feature = "flexbox")]
+impl<'frame, C> FrameTree<'frame, C>
+where
+    C: PixelColor,
+{
+    /// Measures the items of a flex container, including the main and cross sizes, and the total
+    /// count of items.
+    fn measure_items(
+        &mut self,
+        parent: NodeIndex,
+        constraints: Constraints,
+        layout: &FlexLayout,
+    ) -> FlexMeasurements {
+        let direction = layout.direction;
+        // Get the main-axis gap.
+        let (gap, _) = direction.split(layout.gap);
+
+        let mut measurements = FlexMeasurements::default();
+        let mut next = self.node(parent).child;
+
+        while let Some(item) = next {
+            // First we lay out the child node, as layout calculations flow upwards
+            // (with constraints pushing downwards).
+            self.layout_node(item, constraints);
+
+            let size = self.node(item).layout.outer_size;
+            // Get the child's main and cross sizes based on direction.
+            let (child_main, child_cross) = direction.split(size);
+
+            if measurements.count > 0 {
+                measurements.main = measurements.main.saturating_add(gap);
+            }
+
+            measurements.main = measurements.main.saturating_add(child_main);
+            measurements.cross = measurements.cross.max(child_cross);
+            measurements.count = measurements.count.saturating_add(1);
+
+            next = self.node(item).sibling;
+        }
+
+        measurements
+    }
+
+    /// Positions the items within the parent node based on [`FlexLayout`], particularly
+    /// [`FlexLayout::justify_content`] and [`FlexLayout::align_items`].
+    fn position_items(
+        &mut self,
+        parent: NodeIndex,
+        content_size: Size,
+        layout: &FlexLayout,
+        measurements: FlexMeasurements,
+    ) {
+        let direction = layout.direction;
+
+        // Get the available space for the items based on direction.
+        let (available, _) = direction.split(content_size);
+        // Get the gap size based on direction.
+        let (gap, _) = direction.split(layout.gap);
+        let free = available.saturating_sub(measurements.main);
+
+        let mut cursor = 0u32;
+        let mut index = 0;
+        let mut next = self.node(parent).child;
+
+        while let Some(item) = next {
+            // Calculate the value to shift the offset by
+            let shift = layout.justify_content.shift(free, index, measurements.count);
+            let offset = direction.offset(cursor.saturating_add(shift));
+
+            self.node_mut(item).layout.set_offset(offset);
+
+            let size = self.node(item).layout.outer_size;
+            cursor = cursor.saturating_add(direction.split(size).0);
+
+            next = self.node(item).sibling;
+
+            if next.is_some() {
+                cursor = cursor.saturating_add(gap);
+            }
+
+            index += 1;
+        }
     }
 }
