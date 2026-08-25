@@ -8,7 +8,7 @@ use embedded_graphics::{
 use crate::{
     Context, Style,
     common::NodeIndex,
-    element::{BuildError, ElementBuilder},
+    element::{BuildError, Element, ElementBuilder},
     layout::Layout,
     style::StyledElement,
     tree::{Node, NodeKind, TextNode},
@@ -27,24 +27,33 @@ impl<C> Default for TextStyle<C> {
     }
 }
 
-impl<'frame, C> Context<'frame, C>
+impl<'frame, C, CE> Context<'frame, C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     /// Creates a new text element with the given content.
-    pub fn text<'cx, 't>(&'cx self, content: &'t str) -> TextBuilder<'cx, 'frame, 't, C> {
+    pub fn text<'cx, 't>(&'cx self, content: &'t str) -> TextBuilder<'cx, 'frame, 't, C, CE> {
         TextBuilder::new(self, content)
     }
 }
 
-pub struct TextBuilder<'cx, 'frame, 't, C: PixelColor> {
+pub struct TextBuilder<'cx, 'frame, 't, C, CE>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
     content: &'t str,
     pub(crate) style: Style<TextStyle<C>, C>,
-    cx: &'cx Context<'frame, C>,
+    cx: &'cx Context<'frame, C, CE>,
 }
 
-impl<'cx, 'frame, 't, C: PixelColor> TextBuilder<'cx, 'frame, 't, C> {
-    pub fn new(cx: &'cx Context<'frame, C>, content: &'t str) -> Self {
+impl<'cx, 'frame, 't, C, CE> TextBuilder<'cx, 'frame, 't, C, CE>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
+    pub fn new(cx: &'cx Context<'frame, C, CE>, content: &'t str) -> Self {
         Self { content, style: Style::default(), cx }
     }
 
@@ -69,9 +78,10 @@ impl<'cx, 'frame, 't, C: PixelColor> TextBuilder<'cx, 'frame, 't, C> {
     }
 }
 
-impl<C> StyledElement for TextBuilder<'_, '_, '_, C>
+impl<C, CE> StyledElement for TextBuilder<'_, '_, '_, C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     type Color = C;
     type Specific = TextStyle<C>;
@@ -85,9 +95,10 @@ where
     }
 }
 
-impl<C> ElementBuilder for TextBuilder<'_, '_, '_, C>
+impl<C, CE> ElementBuilder for TextBuilder<'_, '_, '_, C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     fn try_build(self) -> Result<NodeIndex, BuildError> {
         let range = self.cx.store_text(self.content)?;

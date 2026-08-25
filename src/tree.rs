@@ -10,7 +10,7 @@ use embedded_graphics::{
 use crate::{
     DisplayTarget, StorageView, Style, TextStyle, Theme,
     common::{NodeIndex, TextRange},
-    element::DivStyle,
+    element::{DivStyle, Element, NoCustomElement},
     layout::{BoxLayout, Layout},
     style::BoxStyle,
 };
@@ -19,12 +19,13 @@ use crate::{
 use crate::style::FlexItemStyle;
 
 /// A node in a [`FrameTree`], with pointers to child and sibling nodes.
-pub(crate) struct Node<C>
+pub(crate) struct Node<C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     /// The node's element.
-    pub kind: NodeKind<C>,
+    pub kind: NodeKind<C, CE>,
     /// The layout of this node.
     pub layout: Layout,
 
@@ -34,7 +35,7 @@ where
     pub sibling: Option<NodeIndex>,
 }
 
-impl<C: PixelColor> Node<C> {
+impl<C: PixelColor, CE: Element<C>> Node<C, CE> {
     pub(crate) const fn box_style(&self) -> BoxStyle {
         self.kind.box_style()
     }
@@ -59,23 +60,25 @@ impl<C: PixelColor> Node<C> {
 
 /// [`FrameTree`] is a tree of [`Node`]s, with operations for laying out the frame and then drawing
 /// it.
-pub(crate) struct FrameTree<'frame, C>
+pub(crate) struct FrameTree<'frame, C, CE = NoCustomElement>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     /// The index of the root node, only set after [`FrameTree::layout`] is called.
     pub root: Option<NodeIndex>,
     /// The storage for the frame tree, including nodes and text.
-    pub storage: StorageView<'frame, C>,
+    pub storage: StorageView<'frame, C, CE>,
 }
 
-impl<'frame, C> FrameTree<'frame, C>
+impl<'frame, C, CE> FrameTree<'frame, C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     /// Creates a new frame tree from the given storage. Does not perform any layout operations yet,
     /// for which [`FrameTree::layout`] must be called.
-    pub(crate) const fn new(storage: StorageView<'frame, C>) -> Self {
+    pub(crate) const fn new(storage: StorageView<'frame, C, CE>) -> Self {
         Self { root: None, storage }
     }
 
@@ -87,13 +90,13 @@ where
 
     /// Returns a reference to the node at the given index.
     #[inline]
-    pub(crate) fn node(&self, index: NodeIndex) -> &Node<C> {
+    pub(crate) fn node(&self, index: NodeIndex) -> &Node<C, CE> {
         &self.storage.nodes[index]
     }
 
     /// Returns a mutable reference to the node at the given index.
     #[inline]
-    pub(crate) fn node_mut(&mut self, index: NodeIndex) -> &mut Node<C> {
+    pub(crate) fn node_mut(&mut self, index: NodeIndex) -> &mut Node<C, CE> {
         &mut self.storage.nodes[index]
     }
 
@@ -241,16 +244,19 @@ where
     }
 }
 
-pub(crate) enum NodeKind<C> {
+pub(crate) enum NodeKind<C: PixelColor, CE: Element<C>> {
     Div(Style<DivStyle, C>),
     Text(TextNode<C>),
+    /// A custom element.
+    Custom(Style<(), C>, CE),
 }
 
-impl<C: PixelColor> NodeKind<C> {
+impl<C: PixelColor, CE: Element<C>> NodeKind<C, CE> {
     pub(crate) const fn box_style(&self) -> BoxStyle {
         match self {
             Self::Div(style) => style.box_style(),
             Self::Text(text) => text.style.box_style(),
+            Self::Custom(style, _) => style.box_style(),
         }
     }
 
@@ -259,6 +265,7 @@ impl<C: PixelColor> NodeKind<C> {
         match self {
             Self::Div(style) => style.flex_item_style(),
             Self::Text(text) => text.style.flex_item_style(),
+            Self::Custom(style, _) => style.flex_item_style(),
         }
     }
 
@@ -267,6 +274,7 @@ impl<C: PixelColor> NodeKind<C> {
         match self {
             Self::Div(style) => style.background,
             Self::Text(text) => text.style.background,
+            Self::Custom(style, _) => style.background,
         }
     }
 }

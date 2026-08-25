@@ -26,20 +26,34 @@ pub use theme::Theme;
 
 use crate::{
     common::{NodeIndex, TextRange},
+    element::{Element, NoCustomElement},
     layout::Constraints,
     tree::{FrameTree, Node},
 };
 
 /// Storage backed by [`heapless::Vec`] that holds frame data for rendering. Capacity is fixed at
 /// `N` items.
-#[derive(Default)]
-pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024> {
-    nodes: heapless::Vec<Node<C>, N>,
+pub struct FrameStorage<C, const N: usize = 64, const T: usize = 1024, CE = NoCustomElement>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
+    nodes: heapless::Vec<Node<C, CE>, N>,
     /// A buffer for UTF-8 encoded text content. The reason we don't store this inside
     /// of [`Node`] ([`TextNode`]) is to reduce memory usage. Since [`Node`] is a fixed-size
     /// struct, storing text with capacity `N` bytes would carry over to all [`Node`] instances,
     /// even if they don't contain text.
     text: heapless::Vec<u8, T>,
+}
+
+impl<C, const N: usize, const T: usize, CE> Default for FrameStorage<C, N, T, CE>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
+    fn default() -> Self {
+        Self { nodes: heapless::Vec::new(), text: heapless::Vec::new() }
+    }
 }
 
 /// Tracks the usage of a [`FrameStorage`] buffer.
@@ -62,9 +76,13 @@ pub struct FrameCapacity {
     pub text: usize,
 }
 
-impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
+impl<C, const N: usize, const T: usize, CE> FrameStorage<C, N, T, CE>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
     /// Returns a mutable view into this storage buffer.
-    pub const fn view(&mut self) -> StorageView<'_, C> {
+    pub const fn view(&mut self) -> StorageView<'_, C, CE> {
         StorageView { nodes: &mut self.nodes, text: &mut self.text }
     }
 
@@ -91,20 +109,25 @@ impl<C: PixelColor, const N: usize, const T: usize> FrameStorage<C, N, T> {
 }
 
 /// A capacity-erased mutable view into a [`FrameStorage`] buffer.
-pub struct StorageView<'frame, C: PixelColor> {
-    nodes: &'frame mut VecView<Node<C>>,
+pub struct StorageView<'frame, C, CE>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
+    nodes: &'frame mut VecView<Node<C, CE>>,
     text: &'frame mut VecView<u8>,
 }
 
 /// The [`Ui`] struct is the main entrypoint for the Guillotine UI framework.
 /// It manages the display and takes care of rendering the UI from a tree of [`Element`]s,
 /// with [`Self::render`].
-pub struct Ui<D, const N: usize = 64, const T: usize = 1024>
+pub struct Ui<D, const N: usize = 64, const T: usize = 1024, CE = NoCustomElement>
 where
     D: DisplayTarget,
+    CE: Element<D::Color>,
 {
     display: D,
-    storage: FrameStorage<D::Color, N, T>,
+    storage: FrameStorage<D::Color, N, T, CE>,
     theme: Theme<D::Color>,
 }
 
@@ -120,9 +143,10 @@ pub enum RenderError<E> {
     Draw(E),
 }
 
-impl<D, const N: usize, const T: usize> Ui<D, N, T>
+impl<D, const N: usize, const T: usize, CE> Ui<D, N, T, CE>
 where
     D: DisplayTarget,
+    CE: Element<D::Color>,
 {
     /// Creates a new [`Ui`] instance with an explicit theme.
     ///
@@ -130,7 +154,7 @@ where
     /// standard embedded-graphics color types, [`Ui::new`] supplies a black and white theme.
     pub const fn with_theme(
         display: D,
-        storage: FrameStorage<D::Color, N, T>,
+        storage: FrameStorage<D::Color, N, T, CE>,
         theme: Theme<D::Color>,
     ) -> Self {
         Self { display, storage, theme }
@@ -152,7 +176,7 @@ where
     /// Renders the given `view` onto the display.
     pub fn render<V>(&mut self, view: &V) -> Result<(), RenderError<D::Error>>
     where
-        V: Render<D::Color>,
+        V: Render<D::Color, CE>,
     {
         self.storage.clear();
 
@@ -194,18 +218,19 @@ where
     }
 
     /// Returns a reference to the frame storage.
-    pub const fn storage(&self) -> &FrameStorage<D::Color, N, T> {
+    pub const fn storage(&self) -> &FrameStorage<D::Color, N, T, CE> {
         &self.storage
     }
 }
 
-impl<D, const N: usize, const T: usize> Ui<D, N, T>
+impl<D, const N: usize, const T: usize, CE> Ui<D, N, T, CE>
 where
     D: DisplayTarget,
     Theme<D::Color>: Default,
+    CE: Element<D::Color>,
 {
     /// Creates a new [`Ui`] instance with a black background and white foreground.
-    pub fn new(display: D, storage: FrameStorage<D::Color, N, T>) -> Self {
+    pub fn new(display: D, storage: FrameStorage<D::Color, N, T, CE>) -> Self {
         Self::with_theme(display, storage, Theme::default())
     }
 }
@@ -267,24 +292,24 @@ impl<T: ElementBuilder> FluentBuilder for T {}
 /// display color declares that color once in its implementation, for example
 /// `impl Render<BinaryColor> for MyView`. Element constructors inside `render` infer the color from
 /// its return type and don't need explicit generic arguments.
-pub trait Render<C = Rgb565>
+pub trait Render<C = Rgb565, CE: Element<C> = NoCustomElement>
 where
     C: PixelColor,
 {
     /// Renders this element into an [`Element`] using the given [`Context`].
-    fn render(&self, cx: &Context<'_, C>) -> impl ElementBuilder;
+    fn render(&self, cx: &Context<'_, C, CE>) -> impl ElementBuilder;
 }
 
 /// For now, unused. In the future, will be used for context management, such as:
 /// - Allocating and managing retained resources
 /// - Interactivity (from UI upstream)
-pub struct Context<'frame, C: PixelColor = Rgb565> {
-    storage: core::cell::RefCell<StorageView<'frame, C>>,
+pub struct Context<'frame, C: PixelColor = Rgb565, CE: Element<C> = NoCustomElement> {
+    storage: core::cell::RefCell<StorageView<'frame, C, CE>>,
 }
 
-impl<'frame, C: PixelColor> Context<'frame, C> {
+impl<'frame, C: PixelColor, CE: Element<C>> Context<'frame, C, CE> {
     /// Creates a new [`Context`] with the given [`FrameStorage`].
-    const fn new(storage: StorageView<'frame, C>) -> Self {
+    const fn new(storage: StorageView<'frame, C, CE>) -> Self {
         Self { storage: core::cell::RefCell::new(storage) }
     }
 
@@ -298,7 +323,7 @@ impl<'frame, C: PixelColor> Context<'frame, C> {
 
     /// Inserts a node into the storage, returning its index.
     /// Returns `None` if storage is full.
-    fn insert(&self, node: Node<C>) -> Result<NodeIndex, BuildError> {
+    fn insert(&self, node: Node<C, CE>) -> Result<NodeIndex, BuildError> {
         let mut storage = self.storage.borrow_mut();
         let index = storage.nodes.len();
         storage.nodes.push(node).map_err(|_| BuildError::NodeCapacity)?;
@@ -541,7 +566,7 @@ mod tests {
 
     #[test]
     fn column_draws_its_styled_border_box() {
-        let column = NodeKind::<Rgb565>::Div(Style {
+        let column = NodeKind::<Rgb565, NoCustomElement>::Div(Style {
             border: 1.into(),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
@@ -799,7 +824,7 @@ mod tests {
 
     #[test]
     fn asymmetric_borders_are_painted_inside_the_border_box() {
-        let column = NodeKind::<Rgb565>::Div(Style {
+        let column = NodeKind::<Rgb565, NoCustomElement>::Div(Style {
             border: Insets::new(1, 2, 3, 4),
             border_color: Some(Rgb565::BLUE),
             background: Some(Rgb565::RED),
@@ -826,7 +851,7 @@ mod tests {
 
     #[test]
     fn box_painting_supports_binary_color() {
-        let column = NodeKind::<BinaryColor>::Div(Style {
+        let column = NodeKind::<BinaryColor, NoCustomElement>::Div(Style {
             border: (1, 2, 1, 2).into(),
             border_color: Some(BinaryColor::On),
             background: Some(BinaryColor::Off),

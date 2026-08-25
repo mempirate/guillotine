@@ -10,11 +10,16 @@ use embedded_graphics::{
 
 use crate::{
     Font, Style, Theme,
+    element::Element,
     layout::BoxLayout,
     tree::{NodeKind, TextNode},
 };
 
-impl<C: PixelColor> NodeKind<C> {
+impl<C, CE> NodeKind<C, CE>
+where
+    C: PixelColor,
+    CE: Element<C>,
+{
     pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
@@ -30,6 +35,7 @@ impl<C: PixelColor> NodeKind<C> {
         match self {
             Self::Div(style) => style.background.is_some(),
             Self::Text(text) => text.style.background.is_some(),
+            Self::Custom(style, _) => style.background.is_some(),
         }
     }
 }

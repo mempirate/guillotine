@@ -6,6 +6,7 @@ use embedded_graphics::{
 
 use crate::{
     common::{NodeIndex, SizeExt as _, to_i32},
+    element::Element,
     style::{FlexDirection, FlexLayout},
     tree::{FrameTree, NodeKind},
 };
@@ -167,9 +168,10 @@ enum ContentLayout {
     Leaf(Size),
 }
 
-impl<'frame, C> FrameTree<'frame, C>
+impl<'frame, C, CE> FrameTree<'frame, C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     /// Lays out the full tree, starting with the root node.
     pub(crate) fn layout(&mut self, root: NodeIndex, constraints: Constraints) {
@@ -189,6 +191,9 @@ where
         let content_layout = match &self.node(index).kind {
             NodeKind::Div(style) => ContentLayout::Flex(style.specific.clone().into()),
             NodeKind::Text(text) => ContentLayout::Leaf(content_constraints.constrain(text.size)),
+            NodeKind::Custom(_, element) => {
+                ContentLayout::Leaf(content_constraints.constrain(element.intrinsic_size()))
+            }
         };
 
         #[cfg(feature = "flexbox")]
@@ -401,9 +406,10 @@ impl FlexMeasurements {
 }
 
 #[cfg(feature = "flexbox")]
-impl<'frame, C> FrameTree<'frame, C>
+impl<'frame, C, CE> FrameTree<'frame, C, CE>
 where
     C: PixelColor,
+    CE: Element<C>,
 {
     /// Measures the items of a flex container, including the main and cross sizes, and the total
     /// count of items.
