@@ -77,12 +77,12 @@ impl Render for BasicView {
 }
 
 fn main() {
-    // Display should implement embedded_graphics DrawTarget
+    // Displays implement embedded-graphics' `DrawTarget`.
     let display = MockDisplay::<Rgb565>::new();
 
     let view = BasicView { greeting: "Build tiny interfaces." };
 
-    // Initialize stack-based storage for the frame. Capacity: 32 elements
+    // Initialize stack-based storage for the frame. Capacity: 32 nodes
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
 
@@ -90,7 +90,7 @@ fn main() {
     // if you have memory available, use `BufferedTarget`.
     let mut ui = Ui::new(DirectTarget::new(display), storage).with_background(CANVAS);
 
-    // Render the view
+    // Render the view.
     ui.render(&view).unwrap();
 }
 ```
@@ -103,29 +103,27 @@ over `DirectTarget`, since it can dramatically increase frame rates and reduce
 flicker to near unnoticeable if you can cover the whole display.
 
 ```rust,ignore
-use embedded_graphics::{pixelcolor::Rgb565, mock_display::MockDisplay};
+use embedded_graphics::{mock_display::MockDisplay, pixelcolor::Rgb565};
 use static_cell::ConstStaticCell;
-use guillotine::{*, buffered::BufferedTarget};
+use guillotine::{buffered::BufferedTarget, *};
 
-/// The size of the frame buffer, should ideally cover your whole display
-/// (width * height).
+// The frame buffer should ideally cover the whole display (width * height).
 const FRAMEBUFFER_PIXELS: usize = 320 * 172;
 
-/// Allocate the buffer in static memory with your
-/// chosen color.
+// Allocate the buffer in static memory with your chosen color.
 static FRAMEBUFFER: ConstStaticCell<[Rgb565; FRAMEBUFFER_PIXELS]> =
     ConstStaticCell::new([Rgb565::new(0, 0, 0); FRAMEBUFFER_PIXELS]);
 
 fn main() {
     let mut display = MockDisplay::<Rgb565>::new();
-    
+
     // Initialize stack-based storage for the frame. Capacity: 32 elements
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
 
-    /// Initialize the buffered display target 
+    // Initialize the buffered display target.
     let target = BufferedTarget::new(&mut display, FRAMEBUFFER.take());
-    
+
     let mut ui = Ui::new(target, storage);
 
     // ... render something
@@ -141,7 +139,7 @@ Note that the memory used by an `Rgb565` buffer is `pixels x 2 bytes`.
 
 Ideally, your frame buffer covers the whole display. However, you can provide a
 buffer of any size, and `render()` will execute a greedy top-down traversal to
-find the first subtree that fits. 
+find the first subtree that fits.
 Passing buffers that are smaller than the area of any element on the screen will
 fall back to direct drawing.
 
@@ -155,16 +153,26 @@ fall back to direct drawing.
 
 Guillotine does not require an allocator, and uses [`heapless`](https://docs.rs/heapless/latest/heapless/) to store fixed-capacity node and text arrays inline.
 
-This library exposes `FrameStorage` as the frontend for all memory management. The `FrameStorage`
-signature looks like this:
+This library exposes `FrameStorage` as the frontend for frame memory. Its signature is:
+
 ```rust,ignore
-pub struct FrameStorage<C: PixelColor, const N: usize = 64, const T: usize = 1024>
+pub struct FrameStorage<
+    C,
+    const N: usize = 64,
+    const T: usize = 1024,
+    CE = NoCustomElement,
+>
 ```
 
-Since `heapless` stores
-data inline, capacity has to be specified upfront through const generics. `FrameStorage` contains 2 buffers:
-1. `nodes` with capacity `N` (number of nodes): stores the tree of UI elements. 64 by default.
-2. `text` with capacity `T` (bytes): stores the UTF-8 bytes for all text elements present in the UI. 1024 by default.
+Since `heapless` stores data inline, capacity has to be specified upfront through const generics.
+`FrameStorage` contains two buffers:
+
+1. `nodes`, with capacity `N`, stores the frame's element tree. The default is 64 nodes.
+2. `text`, with capacity `T`, stores the UTF-8 bytes for all text elements in the frame. The
+   default is 1024 bytes.
+
+`CE` is the application-defined custom element type. It defaults to `NoCustomElement` for UIs that
+only use Guillotine's built-in elements.
 
 It's recommended to tune `N` and `T` to fit the specifics
 of your UI. `FrameStorage` exposes some methods to help you do that:
@@ -182,9 +190,9 @@ containers along the horizontal axis with support for gaps, and columns are thei
 
 ### Flexbox
 
-More complete flexbox support is gated behind a `flexbox` feature and is turned off by default, 
+More complete flexbox support is gated behind a `flexbox` feature and is turned off by default,
 because these flexbox properties require the layout tree to be traversed
-twice, demanding extra compute and slightly render latency. 
+twice, demanding extra compute and slightly higher rendering latency.
 
 With `flexbox` on, you'll get access to CSS-like flexbox functionality, including `justify-content` and
 `align-items` (for containers), and `flex-grow` and `flex` for items.
@@ -222,34 +230,61 @@ them, and margin is added outside. Width and height are independent; an omitted 
 automatically from the element's contents. Configured dimensions grow to contain padding and border
 when parent constraints allow.
 
+## Custom Elements
+
+Guillotine supports custom elements that implement their own `embedded-graphics`-based drawing.
+
+For example, a custom `BatteryGauge` can implement the `CustomElement` trait:
+
+```rust,ignore
+pub trait CustomElement<C: PixelColor> {
+    /// Returns the element's natural content size before common style and parent constraints.
+    fn intrinsic_size(&self) -> Size;
+
+    /// Draws the element inside its absolute content bounds.
+    fn draw<D>(&self, bounds: &Rectangle, theme: &Theme<C>, target: &mut D) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = C>;
+}
+```
+
+Then add it to a view with `cx.custom()`:
+
+```rust,ignore
+impl Render<Color, BatteryGauge> for AppView {
+    fn render(&self, cx: &Context<'_, Color, BatteryGauge>) -> impl ElementBuilder {
+        cx.custom(BatteryGauge::new(100))
+            .padding(4)
+            .border(1)
+            .border_color(Color::new(0, 0, 0))
+    }
+}
+```
+
+The `bounds` passed to `draw` are the absolute content rectangle after margin, border, and padding
+have been resolved. Guillotine clips the draw target to that rectangle and passes the active theme.
+
+If an application has multiple custom element types, define an enum with one variant per type and
+delegate `CustomElement` from the enum. See [`custom_element.rs`](examples/custom_element.rs) for a
+complete example.
+
+> [!IMPORTANT]
+> Custom elements are stored inline. A large `CE` type can
+> therefore increase the size of every node in the UI tree. Keep custom element values compact.
+
 ## Examples
 
 See the [examples README](./examples).
 
 ## Core Concepts
 
-### Declarative Definition
-- Explain the idea of declaratively building your UI
+Each call to `Ui::render` declaratively rebuilds an element tree in `FrameStorage`, lays it out, and
+draws it. Application state remains in the view; the frame tree is temporary and is cleared before
+the next render.
 
-Status: implemented ✅
-
-### Hybrid Immediate & Retained Mode
-
-Status: unimplemented ❌
-
-### Similar tree-based layout to X
-- GPUI
-
-Status: implemented ✅
-
-### State Management
-
-### Layout Engine
-- Conceptually similar to Flutter (i.e. constraints go down, sizes go up)
-  - constraints flow downward, sizes flow upward, positions flow downward
-- Requirement: single pass.
-
-Status: implemented ✅
+Layout follows a constraints-based model: parent constraints flow down the tree, child sizes flow
+back up, and final positions flow down. Rows arrange children horizontally, columns arrange them
+vertically, and custom elements act as leaf content with an intrinsic size.
 
 ## Why?
 
@@ -260,12 +295,11 @@ I was trying to build a clean-looking dashboard on a small LCD screen powered by
 
 Additionally, I wanted to learn what it would take to build something like this.
 
-
 ## Roadmap
 
 ### v0.0.1
 - [x] Try to mimic GPUI declaration style: <https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/hello_world.rs>
-- [x] Low-level `Element` / `ParentElement` trait for custom elements and widgets
+- [x] Low-level `ElementBuilder` / `ParentElement` traits for composing elements and widgets
 - [x] Support generic `PixelColor`
 - [x] Full immediate mode redrawing
 - [x] Make repo ready for publishing:
@@ -287,7 +321,7 @@ Additionally, I wanted to learn what it would take to build something like this.
 
 ### v0.1.0
 - [x] No alloc
-  
+
 ### v0.2.1
 - [x] `framebuffer` feature with frame buffer support
 
@@ -295,17 +329,20 @@ Additionally, I wanted to learn what it would take to build something like this.
 - [x] Refactored layout engine
 - [x] Support flexbox layout (`flexbox` feature)
 
-### v0.3.1
-- [ ] Support for [absolute positioning](https://taffylayout.com/docs/styling/position) 
+### v0.4.0
+- [x] Support custom elements
+
+### v0.4.1
+- [ ] Support for [absolute positioning](https://taffylayout.com/docs/styling/position)
       (relative by default). Introduces a new explicit `position` property to `Style`.
 
-### v0.3.2
+### v0.4.2
 - [ ] New elements
   - [ ] Dialogs / Modals (floating containers)
   - [ ] Charts
   - [ ] Spinner (going to be interesting as this is essentially a self-rendering element). Will
         probably require a global `frame_rate` to be set on the `Ui`. However, this would be a full
-        retained mode approach with an async polling loop. 
+        retained mode approach with an async polling loop.
         Another approach is to first implement incremental redrawing, and rely
         on the caller to call `render()` at their chosen rate. However, each `render()` would do
         a bunch of compute, so probably not super efficient?
@@ -313,8 +350,8 @@ Additionally, I wanted to learn what it would take to build something like this.
 ### Backlog
 - [ ] Mirrored debugger / inspector:
   - When plugged into an MCU, this feature launches an interactive inspector
-    on your host machine (think the Chrome inspector). Displays realtime total / per element
-    memory consumption, frame rendering times, boxes, frame buffer utilization etc. 
+    on your host machine (think the Chrome inspector). Displays real-time total and per-element
+    memory consumption, frame rendering times, boxes, frame buffer utilization, etc.
     Builds on the embedded-graphics simulator.
 - [ ] Add memory usage for examples
   - cargo binutils for examples in CI (cargo size). This will detect regressions.
@@ -324,18 +361,18 @@ Additionally, I wanted to learn what it would take to build something like this.
   - [ ] Frame rendering
   - [ ] Frame drawing
 - [ ] Stats for frame buffers (to determine optimal sizing)
-- [ ] Incremental drawing behind an `inremental` feature
+- [ ] Incremental drawing behind an `incremental` feature
 - [ ] Explicit behaviour:
   - [x] Hidden
   - [ ] Visible
   - [ ] Scroll
-- [ ] Custom elements
 - [ ] Support for interaction behind an `interaction` feature
 - [ ] Support interactive elements:
   - [ ] Button
   - [ ] Slider
 
 ## Prior Work & Inspiration
+
 - [Clay by Nic Barker](https://github.com/nicbarker/clay#retained-mode-rendering)
 - [Kolibri by Yandrik](https://github.com/Yandrik/kolibri)
 - [GPUI by Zed](https://github.com/zed-industries/zed/tree/main/crates/gpui)

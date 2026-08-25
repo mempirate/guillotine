@@ -58,12 +58,12 @@ impl Render for BasicView {
 }
 
 fn main() {
-    // Display should implement embedded_graphics DrawTarget
+    // Displays implement embedded-graphics' `DrawTarget`.
     let display = SimulatorDisplay::<Rgb565>::new(Size::new(320, 172));
 
     let view = BasicView { greeting: "Build tiny interfaces." };
 
-    // Initialize stack-based storage for the frame. Capacity: 32 elements
+    // Initialize stack-based storage for the frame. Capacity: 32 nodes
     // and 128 bytes of UTF-8 text.
     let storage = FrameStorage::<Rgb565, 32, 128>::default();
 
@@ -71,7 +71,7 @@ fn main() {
     // if you have memory available, use `BufferedTarget`.
     let mut ui = Ui::new(DirectTarget::new(display), storage).with_background(CANVAS);
 
-    // Render the view
+    // Render the view.
     let start = std::time::Instant::now();
     ui.render(&view).unwrap();
     println!("render time: {:?}", start.elapsed());

@@ -27,24 +27,30 @@ impl<C> Default for TextStyle<C> {
     }
 }
 
-impl<'frame, C> Context<'frame, C>
+impl<'frame, C, CE> Context<'frame, C, CE>
 where
     C: PixelColor,
 {
     /// Creates a new text element with the given content.
-    pub fn text<'cx, 't>(&'cx self, content: &'t str) -> TextBuilder<'cx, 'frame, 't, C> {
+    pub fn text<'cx, 't>(&'cx self, content: &'t str) -> TextBuilder<'cx, 'frame, 't, C, CE> {
         TextBuilder::new(self, content)
     }
 }
 
-pub struct TextBuilder<'cx, 'frame, 't, C: PixelColor> {
+pub struct TextBuilder<'cx, 'frame, 't, C, CE>
+where
+    C: PixelColor,
+{
     content: &'t str,
     pub(crate) style: Style<TextStyle<C>, C>,
-    cx: &'cx Context<'frame, C>,
+    cx: &'cx Context<'frame, C, CE>,
 }
 
-impl<'cx, 'frame, 't, C: PixelColor> TextBuilder<'cx, 'frame, 't, C> {
-    pub fn new(cx: &'cx Context<'frame, C>, content: &'t str) -> Self {
+impl<'cx, 'frame, 't, C, CE> TextBuilder<'cx, 'frame, 't, C, CE>
+where
+    C: PixelColor,
+{
+    pub fn new(cx: &'cx Context<'frame, C, CE>, content: &'t str) -> Self {
         Self { content, style: Style::default(), cx }
     }
 
@@ -69,7 +75,7 @@ impl<'cx, 'frame, 't, C: PixelColor> TextBuilder<'cx, 'frame, 't, C> {
     }
 }
 
-impl<C> StyledElement for TextBuilder<'_, '_, '_, C>
+impl<C, CE> StyledElement for TextBuilder<'_, '_, '_, C, CE>
 where
     C: PixelColor,
 {
@@ -85,7 +91,7 @@ where
     }
 }
 
-impl<C> ElementBuilder for TextBuilder<'_, '_, '_, C>
+impl<C, CE> ElementBuilder for TextBuilder<'_, '_, '_, C, CE>
 where
     C: PixelColor,
 {

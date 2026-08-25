@@ -119,7 +119,6 @@ impl_insets_from!(i32, |value: i32| {
 });
 
 /// The style of a box, including margin, border, padding, and size.
-// TODO: Borrow fields instead of owning.
 pub(crate) struct BoxStyle {
     pub margin: Insets,
     pub border: Insets,
@@ -191,7 +190,7 @@ impl FlexBasis {
     }
 }
 
-/// Common style type shared between all [`crate::Element`] variants.
+/// Common style shared by all element builders.
 ///
 /// # Box model
 ///

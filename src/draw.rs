@@ -1,35 +1,47 @@
 use embedded_graphics::{
     Drawable as _,
-    draw_target::DrawTarget,
+    draw_target::{DrawTarget, DrawTargetExt},
     geometry::{Point, Size},
     mono_font::MonoTextStyleBuilder,
     pixelcolor::PixelColor,
-    primitives::{Primitive as _, PrimitiveStyle, Rectangle},
+    primitives::Rectangle,
     text::{Baseline, Text},
 };
 
 use crate::{
     Font, Style, Theme,
-    layout::BoxLayout,
+    common::to_i32,
+    element::CustomElement,
+    layout::BorderBox,
     tree::{NodeKind, TextNode},
 };
 
-impl<C: PixelColor> NodeKind<C> {
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
+impl<C, CE> NodeKind<C, CE>
+where
+    C: PixelColor,
+    CE: CustomElement<C>,
+{
+    pub(crate) fn draw<D>(
+        &self,
+        border_box: &BorderBox,
+        theme: &Theme<C>,
+        target: &mut D,
+    ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
     {
         match self {
-            Self::Div(style) => draw_box(style, layout, target),
-            _ => unimplemented!("text drawing uses a different code path"),
-        }
-    }
+            Self::Div(style) => border_box.draw(style, target),
+            Self::Custom(style, element) => {
+                // First draw the border box, then the custom element content.
+                border_box.draw(style, target)?;
 
-    /// Returns whether the node has a background color, i.e. is not transparent.
-    pub(crate) const fn has_background(&self) -> bool {
-        match self {
-            Self::Div(style) => style.background.is_some(),
-            Self::Text(text) => text.style.background.is_some(),
+                // Clip the target to the content area.
+                let mut target = target.clipped(&border_box.content);
+
+                element.draw(&border_box.content, theme, &mut target)
+            }
+            _ => unimplemented!("text drawing uses a different code path"),
         }
     }
 }
@@ -39,14 +51,14 @@ impl<C: PixelColor> TextNode<C> {
     pub(crate) fn draw<D>(
         &self,
         content: &str,
-        layout: &BoxLayout,
-        target: &mut D,
+        border_box: &BorderBox,
         theme: &Theme<C>,
+        target: &mut D,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
     {
-        draw_box(&self.style, layout, target)?;
+        border_box.draw(&self.style, target)?;
 
         match self.style.font {
             Font::Mono(font) => {
@@ -57,7 +69,7 @@ impl<C: PixelColor> TextNode<C> {
 
                 Text::with_baseline(
                     content,
-                    layout.content.top_left,
+                    border_box.content.top_left,
                     character_style,
                     Baseline::Top,
                 )
@@ -68,66 +80,53 @@ impl<C: PixelColor> TextNode<C> {
     }
 }
 
-// TODO: Clean up everything below.
-/// Draws the common border box shared by all built-in elements.
-pub(crate) fn draw_box<S, C, D>(
-    style: &Style<S, C>,
-    layout: &BoxLayout,
-    target: &mut D,
-) -> Result<(), D::Error>
-where
-    S: Default,
-    C: PixelColor,
-    D: DrawTarget<Color = C>,
-{
-    if let Some(color) = style.background {
-        draw_filled_rectangle(layout.border, color, target)?;
+impl BorderBox {
+    /// Draws the common border box shared by all elements.
+    fn draw<D, S, C>(&self, style: &Style<S, C>, target: &mut D) -> Result<(), D::Error>
+    where
+        S: Default,
+        D: DrawTarget<Color = C>,
+        C: PixelColor,
+    {
+        if let Some(color) = style.background {
+            fill_rectangle(self.border, color, target)?;
+        }
+
+        let Some(color) = style.border_color else {
+            return Ok(());
+        };
+
+        let origin = self.border.top_left;
+        let size = self.border.size;
+
+        let top = style.border.top.min(size.height);
+        let right = style.border.right.min(size.width);
+        let bottom = style.border.bottom.min(size.height);
+        let left = style.border.left.min(size.width);
+
+        // Construct the border bands.
+        let bands = [
+            // x, y, width, height
+            (0, 0, size.width, top),
+            (size.width.saturating_sub(right), 0, right, size.height),
+            (0, size.height.saturating_sub(bottom), size.width, bottom),
+            (0, 0, left, size.height),
+        ];
+
+        for (x, y, width, height) in bands {
+            // Compute the band's absolute origin.
+            let top_left =
+                Point::new(origin.x.saturating_add(to_i32(x)), origin.y.saturating_add(to_i32(y)));
+
+            fill_rectangle(Rectangle::new(top_left, Size::new(width, height)), color, target)?;
+        }
+
+        Ok(())
     }
-
-    let Some(color) = style.border_color else {
-        return Ok(());
-    };
-
-    let origin = layout.border.top_left;
-    let size = layout.border.size;
-    let top = style.border.top.min(size.height);
-    let right = style.border.right.min(size.width);
-    let bottom = style.border.bottom.min(size.height);
-    let left = style.border.left.min(size.width);
-
-    // Border bands are painted inside the border box. Opposing bands may overlap when the box is
-    // smaller than its border widths; all edges share one color, so overlap order is immaterial.
-    draw_filled_rectangle(Rectangle::new(origin, Size::new(size.width, top)), color, target)?;
-    draw_filled_rectangle(
-        Rectangle::new(
-            Point::new(
-                saturating_coordinate_add(origin.x, size.width.saturating_sub(right)),
-                origin.y,
-            ),
-            Size::new(right, size.height),
-        ),
-        color,
-        target,
-    )?;
-    draw_filled_rectangle(
-        Rectangle::new(
-            Point::new(
-                origin.x,
-                saturating_coordinate_add(origin.y, size.height.saturating_sub(bottom)),
-            ),
-            Size::new(size.width, bottom),
-        ),
-        color,
-        target,
-    )?;
-    draw_filled_rectangle(Rectangle::new(origin, Size::new(left, size.height)), color, target)
 }
 
-fn draw_filled_rectangle<C, D>(
-    rectangle: Rectangle,
-    color: C,
-    target: &mut D,
-) -> Result<(), D::Error>
+/// Fills a rectangle with the given color and draws it to the target.
+fn fill_rectangle<C, D>(rectangle: Rectangle, color: C, target: &mut D) -> Result<(), D::Error>
 where
     C: PixelColor,
     D: DrawTarget<Color = C>,
@@ -136,9 +135,5 @@ where
         return Ok(());
     }
 
-    rectangle.into_styled(PrimitiveStyle::with_fill(color)).draw(target)
-}
-
-const fn saturating_coordinate_add(coordinate: i32, offset: u32) -> i32 {
-    coordinate.saturating_add(if offset > i32::MAX as u32 { i32::MAX } else { offset as i32 })
+    target.fill_solid(&rectangle, color)
 }

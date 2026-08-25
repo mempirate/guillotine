@@ -1,6 +1,6 @@
 [package]
 name = "guillotine"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "A no_std graphical user interface framework in Rust for embedded devices prioritizing resource efficiency and ergonomics."
 repository = "https://github.com/mempirate/guillotine"
@@ -9,7 +9,15 @@ categories = ["embedded", "no-std"]
 keywords = ["embedded", "gui", "graphics", "no_std", "embedded-graphics"]
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-exclude = ["/.github", "/rust-toolchain.toml", "/rustfmt.toml", "/probes", "/img"]
+exclude = [
+    "/.cargo",
+    "/.github",
+    "/img",
+    "/probes",
+    "/scripts",
+    "/rust-toolchain.toml",
+    "/rustfmt.toml",
+]
 rust-version = "1.87"
 publish = ["crates-io"]
 
@@ -43,6 +51,10 @@ name = "binary"
 required-features = ["simulator"]
 
 [[example]]
+name = "custom_element"
+required-features = ["simulator"]
+
+[[example]]
 name = "flexbox"
 required-features = ["simulator", "flexbox"]
 
@@ -62,6 +74,8 @@ borrow_as_ptr = "warn"
 branches_sharing_code = "warn"
 clear_with_drain = "warn"
 cloned_instead_of_copied = "warn"
+collapsible_if = "warn"
+collapsible_match = "warn"
 collection_is_never_read = "warn"
 dbg_macro = "warn"
 derive_partial_eq_without_eq = "warn"

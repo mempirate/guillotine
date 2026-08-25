@@ -28,9 +28,12 @@ pub struct DivStyle {
     pub(crate) align_items: AlignItems,
 }
 
-pub struct DivBuilder<'cx, 'frame, C: PixelColor> {
+pub struct DivBuilder<'cx, 'frame, C, CE>
+where
+    C: PixelColor,
+{
     style: Style<DivStyle, C>,
-    cx: &'cx Context<'frame, C>,
+    cx: &'cx Context<'frame, C, CE>,
     first_child: Option<NodeIndex>,
     last_child: Option<NodeIndex>,
 
@@ -38,30 +41,36 @@ pub struct DivBuilder<'cx, 'frame, C: PixelColor> {
     error: Option<BuildError>,
 }
 
-impl<'cx, 'frame, C: PixelColor> DivBuilder<'cx, 'frame, C> {
-    pub fn new(cx: &'cx Context<'frame, C>) -> Self {
+impl<'cx, 'frame, C, CE> DivBuilder<'cx, 'frame, C, CE>
+where
+    C: PixelColor,
+{
+    pub fn new(cx: &'cx Context<'frame, C, CE>) -> Self {
         Self { style: Style::default(), cx, first_child: None, last_child: None, error: None }
     }
 }
 
-impl<'frame, C: PixelColor> Context<'frame, C> {
+impl<'frame, C, CE> Context<'frame, C, CE>
+where
+    C: PixelColor,
+{
     /// Creates a new div container builder, with a default row flex direction.
-    pub fn div(&self) -> DivBuilder<'_, 'frame, C> {
+    pub fn div(&self) -> DivBuilder<'_, 'frame, C, CE> {
         DivBuilder::new(self)
     }
 
     /// Creates an empty row container builder.
-    pub fn row(&self) -> DivBuilder<'_, 'frame, C> {
+    pub fn row(&self) -> DivBuilder<'_, 'frame, C, CE> {
         DivBuilder::new(self).flex_direction(FlexDirection::Row)
     }
 
     /// Creates an empty column container builder.
-    pub fn column(&self) -> DivBuilder<'_, 'frame, C> {
+    pub fn column(&self) -> DivBuilder<'_, 'frame, C, CE> {
         DivBuilder::new(self).flex_direction(FlexDirection::Column)
     }
 }
 
-impl<C> StyledElement for DivBuilder<'_, '_, C>
+impl<'frame, C, CE> StyledElement for DivBuilder<'_, 'frame, C, CE>
 where
     C: PixelColor,
 {
@@ -77,7 +86,10 @@ where
     }
 }
 
-impl<C: PixelColor> ParentElement for DivBuilder<'_, '_, C> {
+impl<'frame, C, CE> ParentElement for DivBuilder<'_, 'frame, C, CE>
+where
+    C: PixelColor,
+{
     fn extend<E: ElementBuilder>(&mut self, elements: impl IntoIterator<Item = E>) {
         // Short-circuit if an error occurred during a previous extend call.
         if self.error.is_some() {
@@ -108,7 +120,10 @@ impl<C: PixelColor> ParentElement for DivBuilder<'_, '_, C> {
     }
 }
 
-impl<C: PixelColor> ElementBuilder for DivBuilder<'_, '_, C> {
+impl<'frame, C, CE> ElementBuilder for DivBuilder<'_, 'frame, C, CE>
+where
+    C: PixelColor,
+{
     fn try_build(self) -> Result<NodeIndex, BuildError> {
         if let Some(err) = self.error {
             return Err(err);
