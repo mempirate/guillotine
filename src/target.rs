@@ -15,13 +15,12 @@ pub trait DisplayTarget: DrawTarget + OriginDimensions {
     /// call to [`flush`](Self::flush) is required to update the display.
     fn try_begin(&mut self, bounds: Rectangle, background: Self::Color) -> bool;
 
-    /// Flushes the buffer to the display, filling any remaining space with the given background
-    /// color. Resets the mode to direct drawing.
+    /// Presents buffered drawing to the display and returns to direct drawing mode.
     fn flush(&mut self) -> Result<(), Self::Error>;
 }
 
 /// A display target that only supports direct drawing without buffering. For a buffered display,
-/// use [`BufferedDisplay`](crate::buffered::BufferedDisplay) (behind the `framebuffer` feature).
+/// use [`BufferedTarget`](crate::buffered::BufferedTarget) (behind the `framebuffer` feature).
 pub struct DirectTarget<D>(D);
 
 impl<D> core::ops::Deref for DirectTarget<D> {

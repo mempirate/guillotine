@@ -3,7 +3,7 @@ use embedded_graphics::{geometry::Size, prelude::PixelColor};
 use crate::{
     Context, Style,
     common::{Gap, NodeIndex},
-    element::{BuildError, Element, ElementBuilder, ParentElement},
+    element::{BuildError, ElementBuilder, ParentElement},
     layout::Layout,
     style::{FlexDirection, StyledElement},
     tree::{Node, NodeKind},
@@ -31,7 +31,6 @@ pub struct DivStyle {
 pub struct DivBuilder<'cx, 'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     style: Style<DivStyle, C>,
     cx: &'cx Context<'frame, C, CE>,
@@ -45,7 +44,6 @@ where
 impl<'cx, 'frame, C, CE> DivBuilder<'cx, 'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     pub fn new(cx: &'cx Context<'frame, C, CE>) -> Self {
         Self { style: Style::default(), cx, first_child: None, last_child: None, error: None }
@@ -55,7 +53,6 @@ where
 impl<'frame, C, CE> Context<'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     /// Creates a new div container builder, with a default row flex direction.
     pub fn div(&self) -> DivBuilder<'_, 'frame, C, CE> {
@@ -76,7 +73,6 @@ where
 impl<'frame, C, CE> StyledElement for DivBuilder<'_, 'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     type Color = C;
     type Specific = DivStyle;
@@ -93,7 +89,6 @@ where
 impl<'frame, C, CE> ParentElement for DivBuilder<'_, 'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     fn extend<E: ElementBuilder>(&mut self, elements: impl IntoIterator<Item = E>) {
         // Short-circuit if an error occurred during a previous extend call.
@@ -125,10 +120,9 @@ where
     }
 }
 
-impl<'frame, C: PixelColor, CE> ElementBuilder for DivBuilder<'_, 'frame, C, CE>
+impl<'frame, C, CE> ElementBuilder for DivBuilder<'_, 'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     fn try_build(self) -> Result<NodeIndex, BuildError> {
         if let Some(err) = self.error {

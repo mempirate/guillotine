@@ -16,8 +16,8 @@ mod tree;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::PixelColor};
 
 pub use element::{
-    BuildError, DivStyle, ElementBuilder, Font, ParentElement, StyledFlexContainer, TextStyle,
-    TextStyledElement,
+    BuildError, CustomBuilder, CustomElement, DivStyle, ElementBuilder, Font, NoCustomElement,
+    ParentElement, StyledFlexContainer, TextStyle, TextStyledElement,
 };
 use heapless::VecView;
 pub use style::{Insets, Style, StyledElement};
@@ -26,30 +26,28 @@ pub use theme::Theme;
 
 use crate::{
     common::{NodeIndex, TextRange},
-    element::{Element, NoCustomElement},
     layout::Constraints,
     tree::{FrameTree, Node},
 };
 
-/// Storage backed by [`heapless::Vec`] that holds frame data for rendering. Capacity is fixed at
-/// `N` items.
+/// Fixed-capacity storage for the nodes and text needed to render one frame.
+///
+/// `N` is the maximum node count, `T` is the maximum number of UTF-8 text bytes, and `CE` is the
+/// custom element type stored inline in each custom node.
 pub struct FrameStorage<C, const N: usize = 64, const T: usize = 1024, CE = NoCustomElement>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     nodes: heapless::Vec<Node<C, CE>, N>,
-    /// A buffer for UTF-8 encoded text content. The reason we don't store this inside
-    /// of [`Node`] ([`TextNode`]) is to reduce memory usage. Since [`Node`] is a fixed-size
-    /// struct, storing text with capacity `N` bytes would carry over to all [`Node`] instances,
-    /// even if they don't contain text.
+    /// UTF-8 text content is kept outside [`Node`] to reduce memory usage. Since [`Node`] is a
+    /// fixed-size struct, storing a `T`-byte text buffer inside it would reserve that space for
+    /// every node, including nodes that don't contain text.
     text: heapless::Vec<u8, T>,
 }
 
 impl<C, const N: usize, const T: usize, CE> Default for FrameStorage<C, N, T, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     fn default() -> Self {
         Self { nodes: heapless::Vec::new(), text: heapless::Vec::new() }
@@ -79,7 +77,6 @@ pub struct FrameCapacity {
 impl<C, const N: usize, const T: usize, CE> FrameStorage<C, N, T, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     /// Returns a mutable view into this storage buffer.
     pub const fn view(&mut self) -> StorageView<'_, C, CE> {
@@ -97,7 +94,7 @@ where
         core::mem::size_of::<Self>()
     }
 
-    /// Returns the number of elements currently used in this storage buffer.
+    /// Returns the number of nodes and text bytes used by the most recent frame.
     pub fn usage(&self) -> FrameUsage {
         FrameUsage { nodes: self.nodes.len(), text: self.text.len() }
     }
@@ -112,19 +109,16 @@ where
 pub struct StorageView<'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     nodes: &'frame mut VecView<Node<C, CE>>,
     text: &'frame mut VecView<u8>,
 }
 
 /// The [`Ui`] struct is the main entrypoint for the Guillotine UI framework.
-/// It manages the display and takes care of rendering the UI from a tree of [`Element`]s,
-/// with [`Self::render`].
+/// It manages the display and renders the tree produced by [`Render`] with [`Self::render`].
 pub struct Ui<D, const N: usize = 64, const T: usize = 1024, CE = NoCustomElement>
 where
     D: DisplayTarget,
-    CE: Element<D::Color>,
 {
     display: D,
     storage: FrameStorage<D::Color, N, T, CE>,
@@ -146,7 +140,6 @@ pub enum RenderError<E> {
 impl<D, const N: usize, const T: usize, CE> Ui<D, N, T, CE>
 where
     D: DisplayTarget,
-    CE: Element<D::Color>,
 {
     /// Creates a new [`Ui`] instance with an explicit theme.
     ///
@@ -176,6 +169,7 @@ where
     /// Renders the given `view` onto the display.
     pub fn render<V>(&mut self, view: &V) -> Result<(), RenderError<D::Error>>
     where
+        CE: CustomElement<D::Color>,
         V: Render<D::Color, CE>,
     {
         self.storage.clear();
@@ -227,7 +221,6 @@ impl<D, const N: usize, const T: usize, CE> Ui<D, N, T, CE>
 where
     D: DisplayTarget,
     Theme<D::Color>: Default,
-    CE: Element<D::Color>,
 {
     /// Creates a new [`Ui`] instance with a black background and white foreground.
     pub fn new(display: D, storage: FrameStorage<D::Color, N, T, CE>) -> Self {
@@ -282,47 +275,42 @@ pub trait FluentBuilder {
     }
 }
 
-// Transparent implementation of FluentBuilder for all IntoElement types.
+// Make fluent conditionals available on every element builder.
 impl<T: ElementBuilder> FluentBuilder for T {}
 
-/// The [`Render`] trait is implemented by types that can be rendered into an [`Element`]. Use this
-/// trait to define UI elements.
+/// Converts a view into an element tree for the current frame.
 ///
 /// `C` defaults to [`Rgb565`] to preserve the simple API for existing views. A view for another
 /// display color declares that color once in its implementation, for example
 /// `impl Render<BinaryColor> for MyView`. Element constructors inside `render` infer the color from
 /// its return type and don't need explicit generic arguments.
-pub trait Render<C = Rgb565, CE: Element<C> = NoCustomElement>
+pub trait Render<C = Rgb565, CE = NoCustomElement>
 where
     C: PixelColor,
 {
-    /// Renders this element into an [`Element`] using the given [`Context`].
+    /// Builds this view's root element using the given [`Context`].
     fn render(&self, cx: &Context<'_, C, CE>) -> impl ElementBuilder;
 }
 
-/// For now, unused. In the future, will be used for context management, such as:
-/// - Allocating and managing retained resources
-/// - Interactivity (from UI upstream)
-pub struct Context<'frame, C: PixelColor = Rgb565, CE: Element<C> = NoCustomElement> {
+/// Per-frame context used to create element builders backed by fixed-capacity storage.
+pub struct Context<'frame, C: PixelColor = Rgb565, CE = NoCustomElement> {
     storage: core::cell::RefCell<StorageView<'frame, C, CE>>,
 }
 
-impl<'frame, C: PixelColor, CE: Element<C>> Context<'frame, C, CE> {
-    /// Creates a new [`Context`] with the given [`FrameStorage`].
+impl<'frame, C: PixelColor, CE> Context<'frame, C, CE> {
+    /// Creates a new [`Context`] with the given storage view.
     const fn new(storage: StorageView<'frame, C, CE>) -> Self {
         Self { storage: core::cell::RefCell::new(storage) }
     }
 
-    /// Links the sibling nodes of the given indices (i.e., sets the `sibling` field of the previous
-    /// node to the next node's index)
+    /// Links two sibling nodes by setting `node`'s next sibling to `sibling`.
     fn link_sibling(&self, node: NodeIndex, sibling: NodeIndex) {
         let mut storage = self.storage.borrow_mut();
 
         storage.nodes[node].set_sibling(sibling);
     }
 
-    /// Inserts a node into the storage, returning its index.
-    /// Returns `None` if storage is full.
+    /// Inserts a node into storage and returns its index.
     fn insert(&self, node: Node<C, CE>) -> Result<NodeIndex, BuildError> {
         let mut storage = self.storage.borrow_mut();
         let index = storage.nodes.len();
@@ -577,14 +565,14 @@ mod tests {
             },
             ..Default::default()
         });
-        let layout = layout::BoxLayout {
+        let layout = layout::BorderBox {
             border: Rectangle::new(Point::new(1, 1), Size::new(4, 4)),
             content: Rectangle::new(Point::new(2, 2), Size::new(2, 2)),
         };
         let mut display = MockDisplay::new();
         display.set_allow_overdraw(true);
 
-        column.draw(&layout, &mut display).unwrap();
+        column.draw(&layout, &Theme::default(), &mut display).unwrap();
 
         assert_eq!(display.get_pixel(Point::new(1, 1)), Some(Rgb565::BLUE));
         assert_eq!(display.get_pixel(Point::new(2, 2)), Some(Rgb565::RED));
@@ -831,14 +819,14 @@ mod tests {
             specific: DivStyle { direction: FlexDirection::Column, ..Default::default() },
             ..Style::default()
         });
-        let layout = layout::BoxLayout {
+        let layout = layout::BorderBox {
             border: Rectangle::new(Point::new(1, 1), Size::new(7, 7)),
             content: Rectangle::new(Point::new(5, 2), Size::new(1, 3)),
         };
         let mut display = MockDisplay::new();
         display.set_allow_overdraw(true);
 
-        column.draw(&layout, &mut display).unwrap();
+        column.draw(&layout, &Theme::default(), &mut display).unwrap();
 
         assert_eq!(display.get_pixel(Point::new(5, 1)), Some(Rgb565::BLUE));
         assert_eq!(display.get_pixel(Point::new(6, 3)), Some(Rgb565::BLUE));
@@ -858,14 +846,14 @@ mod tests {
             specific: DivStyle { direction: FlexDirection::Column, ..Default::default() },
             ..Style::default()
         });
-        let layout = layout::BoxLayout {
+        let layout = layout::BorderBox {
             border: Rectangle::new(Point::zero(), Size::new(6, 4)),
             content: Rectangle::new(Point::new(2, 1), Size::new(2, 2)),
         };
         let mut display = MockDisplay::new();
         display.set_allow_overdraw(true);
 
-        column.draw(&layout, &mut display).unwrap();
+        column.draw(&layout, &Theme::default(), &mut display).unwrap();
 
         assert_eq!(display.get_pixel(Point::zero()), Some(BinaryColor::On));
         assert_eq!(display.get_pixel(Point::new(3, 2)), Some(BinaryColor::Off));

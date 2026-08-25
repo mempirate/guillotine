@@ -6,7 +6,7 @@ use embedded_graphics::{
 
 use crate::{
     common::{NodeIndex, SizeExt as _, to_i32},
-    element::Element,
+    element::CustomElement,
     style::{FlexDirection, FlexLayout},
     tree::{FrameTree, NodeKind},
 };
@@ -108,21 +108,21 @@ impl Layout {
     }
 
     /// Resolves the absolute bounds of the complete box layout.
-    pub(crate) fn resolve(&self, parent_origin: Point) -> BoxLayout {
+    pub(crate) fn resolve(&self, parent_origin: Point) -> BorderBox {
         let outer_origin = parent_origin + self.offset;
         let border_origin = outer_origin + self.border_offset;
         let content_origin = outer_origin + self.content_offset;
 
-        BoxLayout {
+        BorderBox {
             border: Rectangle::new(border_origin, self.border_size),
             content: Rectangle::new(content_origin, self.content_size),
         }
     }
 }
 
-/// Fully resolved box layout. Contains absolute positioned rectangles for margin, border and
+/// Fully resolved box layout. Contains absolute positioned rectangles for border and
 /// content.
-pub(crate) struct BoxLayout {
+pub(crate) struct BorderBox {
     pub(crate) border: Rectangle,
     pub(crate) content: Rectangle,
 }
@@ -164,14 +164,14 @@ impl FlexDirection {
 enum ContentLayout {
     /// Flexbox layout.
     Flex(FlexLayout),
-    // A leaf with an inherent size.
+    /// Leaf content with an intrinsic size.
     Leaf(Size),
 }
 
 impl<'frame, C, CE> FrameTree<'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
+    CE: CustomElement<C>,
 {
     /// Lays out the full tree, starting with the root node.
     pub(crate) fn layout(&mut self, root: NodeIndex, constraints: Constraints) {
@@ -179,7 +179,6 @@ where
         self.layout_node(root, constraints);
     }
 
-    // TODO: Clean up
     fn layout_node(&mut self, index: NodeIndex, constraints: Constraints) {
         // Extract the common box style properties.
         let box_style = self.node(index).box_style();
@@ -409,7 +408,7 @@ impl FlexMeasurements {
 impl<'frame, C, CE> FrameTree<'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
+    CE: CustomElement<C>,
 {
     /// Measures the items of a flex container, including the main and cross sizes, and the total
     /// count of items.
@@ -507,9 +506,9 @@ where
             let target_main = metrics.base_main.saturating_add(growth.share(metrics.grow));
 
             let exact_main = (metrics.main != target_main).then_some(target_main);
-            let exact_cross = (layout.align_items.is_stretch() &&
-                metrics.has_auto_cross_size &&
-                metrics.cross != cross_available)
+            let exact_cross = (layout.align_items.is_stretch()
+                && metrics.has_auto_cross_size
+                && metrics.cross != cross_available)
                 .then_some(cross_available);
 
             if exact_main.is_some() || exact_cross.is_some() {

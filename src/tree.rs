@@ -10,8 +10,8 @@ use embedded_graphics::{
 use crate::{
     DisplayTarget, StorageView, Style, TextStyle, Theme,
     common::{NodeIndex, TextRange},
-    element::{DivStyle, Element, NoCustomElement},
-    layout::{BoxLayout, Layout},
+    element::{CustomElement, DivStyle, NoCustomElement},
+    layout::{BorderBox, Layout},
     style::BoxStyle,
 };
 
@@ -22,7 +22,6 @@ use crate::style::FlexItemStyle;
 pub(crate) struct Node<C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     /// The node's element.
     pub kind: NodeKind<C, CE>,
@@ -35,7 +34,7 @@ where
     pub sibling: Option<NodeIndex>,
 }
 
-impl<C: PixelColor, CE: Element<C>> Node<C, CE> {
+impl<C: PixelColor, CE> Node<C, CE> {
     pub(crate) const fn box_style(&self) -> BoxStyle {
         self.kind.box_style()
     }
@@ -45,11 +44,17 @@ impl<C: PixelColor, CE: Element<C>> Node<C, CE> {
         self.kind.flex_item_style()
     }
 
-    pub(crate) fn draw<D>(&self, layout: &BoxLayout, target: &mut D) -> Result<(), D::Error>
+    pub(crate) fn draw<D>(
+        &self,
+        layout: &BorderBox,
+        theme: &Theme<C>,
+        target: &mut D,
+    ) -> Result<(), D::Error>
     where
+        CE: CustomElement<C>,
         D: DrawTarget<Color = C>,
     {
-        self.kind.draw(layout, target)
+        self.kind.draw(layout, theme, target)
     }
 
     /// Sets the index of the next sibling node.
@@ -63,7 +68,6 @@ impl<C: PixelColor, CE: Element<C>> Node<C, CE> {
 pub(crate) struct FrameTree<'frame, C, CE = NoCustomElement>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     /// The index of the root node, only set after [`FrameTree::layout`] is called.
     pub root: Option<NodeIndex>,
@@ -74,7 +78,6 @@ where
 impl<'frame, C, CE> FrameTree<'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     /// Creates a new frame tree from the given storage. Does not perform any layout operations yet,
     /// for which [`FrameTree::layout`] must be called.
@@ -103,6 +106,7 @@ where
     /// Draws the frame tree onto the given target, starting with `root` at `offset`.
     pub(crate) fn draw<D>(&mut self, theme: &Theme<C>, target: &mut D) -> Result<(), D::Error>
     where
+        CE: CustomElement<C>,
         D: DisplayTarget<Color = C>,
     {
         let Some(root) = self.root else { return target.clear(theme.background) };
@@ -162,6 +166,7 @@ where
         target: &mut D,
     ) -> Result<(), D::Error>
     where
+        CE: CustomElement<C>,
         D: DisplayTarget<Color = C>,
     {
         let layout = self.node(index).layout.resolve(parent_origin);
@@ -200,11 +205,12 @@ where
     fn draw_node<D>(
         &self,
         index: NodeIndex,
-        layout: &BoxLayout,
+        layout: &BorderBox,
         theme: &Theme<C>,
         target: &mut D,
     ) -> Result<(), D::Error>
     where
+        CE: CustomElement<C>,
         D: DrawTarget<Color = C>,
     {
         let node = self.node(index);
@@ -213,9 +219,9 @@ where
             // Extract the content of the text node.
             let content = text.content(self.storage.text);
 
-            text.draw(content, layout, target, theme)
+            text.draw(content, layout, theme, target)
         } else {
-            node.draw(layout, target)
+            node.draw(layout, theme, target)
         }
     }
 
@@ -227,6 +233,7 @@ where
         target: &mut D,
     ) -> Result<(), D::Error>
     where
+        CE: CustomElement<C>,
         D: DisplayTarget<Color = C>,
     {
         let layout = self.node(index).layout.resolve(parent_origin);
@@ -244,14 +251,14 @@ where
     }
 }
 
-pub(crate) enum NodeKind<C: PixelColor, CE: Element<C>> {
+pub(crate) enum NodeKind<C: PixelColor, CE> {
     Div(Style<DivStyle, C>),
     Text(TextNode<C>),
     /// A custom element.
     Custom(Style<(), C>, CE),
 }
 
-impl<C: PixelColor, CE: Element<C>> NodeKind<C, CE> {
+impl<C: PixelColor, CE> NodeKind<C, CE> {
     pub(crate) const fn box_style(&self) -> BoxStyle {
         match self {
             Self::Div(style) => style.box_style(),
@@ -276,6 +283,11 @@ impl<C: PixelColor, CE: Element<C>> NodeKind<C, CE> {
             Self::Text(text) => text.style.background,
             Self::Custom(style, _) => style.background,
         }
+    }
+
+    /// Returns whether the node has a background color, i.e. is not transparent.
+    pub(crate) const fn has_background(&self) -> bool {
+        self.background().is_some()
     }
 }
 

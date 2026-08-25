@@ -8,7 +8,7 @@ use embedded_graphics::{
 use crate::{
     Context, Style,
     common::NodeIndex,
-    element::{BuildError, Element, ElementBuilder},
+    element::{BuildError, ElementBuilder},
     layout::Layout,
     style::StyledElement,
     tree::{Node, NodeKind, TextNode},
@@ -30,7 +30,6 @@ impl<C> Default for TextStyle<C> {
 impl<'frame, C, CE> Context<'frame, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     /// Creates a new text element with the given content.
     pub fn text<'cx, 't>(&'cx self, content: &'t str) -> TextBuilder<'cx, 'frame, 't, C, CE> {
@@ -41,7 +40,6 @@ where
 pub struct TextBuilder<'cx, 'frame, 't, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     content: &'t str,
     pub(crate) style: Style<TextStyle<C>, C>,
@@ -51,7 +49,6 @@ where
 impl<'cx, 'frame, 't, C, CE> TextBuilder<'cx, 'frame, 't, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     pub fn new(cx: &'cx Context<'frame, C, CE>, content: &'t str) -> Self {
         Self { content, style: Style::default(), cx }
@@ -81,7 +78,6 @@ where
 impl<C, CE> StyledElement for TextBuilder<'_, '_, '_, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     type Color = C;
     type Specific = TextStyle<C>;
@@ -98,7 +94,6 @@ where
 impl<C, CE> ElementBuilder for TextBuilder<'_, '_, '_, C, CE>
 where
     C: PixelColor,
-    CE: Element<C>,
 {
     fn try_build(self) -> Result<NodeIndex, BuildError> {
         let range = self.cx.store_text(self.content)?;

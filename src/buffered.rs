@@ -9,7 +9,7 @@ use embedded_graphics::{
 
 use crate::DisplayTarget;
 
-/// A target wrapper that uses an internal buffer for drawing.
+/// A display target that draws into a caller-provided pixel buffer when possible.
 pub struct BufferedTarget<'a, D, C>
 where
     D: DrawTarget<Color = C>,
@@ -37,7 +37,7 @@ where
     D: DrawTarget<Color = C>,
     C: PixelColor,
 {
-    /// Initializes a new [`BufferedDisplay`] with the given display and buffer.
+    /// Creates a new [`BufferedTarget`] with the given display and pixel buffer.
     pub const fn new(display: &'a mut D, buffer: &'a mut [C]) -> Self {
         Self { display, pixels: buffer, mode: Mode::Direct }
     }
@@ -91,7 +91,8 @@ where
     C: PixelColor,
 {
     fn size(&self) -> Size {
-        // TODO: Is this correct? Or should we use the buffer size instead?
+        // Buffer capacity only controls which regions can be buffered; the viewport is still the
+        // underlying display's size.
         self.display.size()
     }
 }
@@ -150,7 +151,7 @@ where
         match self.mode {
             Mode::Direct => self.display.fill_contiguous(area, colors),
             Mode::Buffered { .. } => {
-                // TODO: Optimized implementation.
+                // Use the same clipping and coordinate translation as `draw_iter`.
                 self.draw_iter(area.points().zip(colors).map(|(point, color)| Pixel(point, color)))
             }
         }
