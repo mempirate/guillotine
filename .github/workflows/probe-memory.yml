@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Check out trusted measurement tooling
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: tooling
@@ -59,7 +59,7 @@ jobs:
           fi
 
       - name: Check out head revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.pr.outputs.head_repo }}
           ref: ${{ steps.pr.outputs.head_sha }}
@@ -68,7 +68,7 @@ jobs:
 
       - name: Check out base revision
         if: steps.pr.outputs.base_sha != ''
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.pr.outputs.base_repo }}
           ref: ${{ steps.pr.outputs.base_sha }}
@@ -148,7 +148,7 @@ jobs:
 
     steps:
       - name: Check out trusted reporting tooling
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: tooling
