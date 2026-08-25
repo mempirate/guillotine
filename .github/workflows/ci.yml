@@ -21,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-bin: false
       - run: cargo test --all-features --locked
 
   clippy:
@@ -28,6 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: rustup component add clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-bin: false
       - run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
   fmt:
