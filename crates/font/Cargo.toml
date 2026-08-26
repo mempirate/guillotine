@@ -1,0 +1,18 @@
+[package]
+name = "guillotine-fonts"
+version = "0.1.0"
+edition.workspace = true
+description = "Compile-time font conversion support for Guillotine."
+repository.workspace = true
+categories = ["embedded"]
+keywords = ["embedded", "font", "graphics"]
+readme = "README.md"
+license.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true

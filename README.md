@@ -9,6 +9,11 @@
 A `no-std`, allocation-free graphical user interface framework for embedded devices prioritizing efficiency and ergonomics. The UI declaration API is heavily inspired by [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui). Built with (and inherits compatibility from)
 [`embedded-graphics`](https://docs.rs/embedded-graphics/latest/embedded_graphics/).
 
+## Workspace
+
+- [`guillotine`](https://github.com/mempirate/guillotine/tree/main/crates/guillotine) contains the runtime library and examples.
+- [`guillotine-fonts`](https://github.com/mempirate/guillotine/tree/main/crates/font) contains compile-time font conversion support.
+
 ## Demo
 
 A demo Guillotine UI on a Waveshare ESP32-C6 1.47" LCD board from the [`shellyctl`](https://github.com/mempirate/shellyctl) project:
@@ -202,7 +207,7 @@ With `flexbox` on, you'll get access to CSS-like flexbox functionality, includin
 > where `N` is the number of nodes and `D` is the tree depth. For small trees, this shouldn't be a problem,
 > but keep it in mind if you have more complex layouts.
 
-Refer to [`flexbox.rs`](/examples/flexbox.rs) for a flexbox layout example:
+Refer to [`flexbox.rs`](https://github.com/mempirate/guillotine/blob/main/crates/guillotine/examples/flexbox.rs) for a flexbox layout example:
 
 ![Flexbox example](https://raw.githubusercontent.com/mempirate/guillotine/main/img/flexbox.png)
 
@@ -265,7 +270,7 @@ The `bounds` passed to `draw` are the absolute content rectangle after margin, b
 have been resolved. Guillotine clips the draw target to that rectangle and passes the active theme.
 
 If an application has multiple custom element types, define an enum with one variant per type and
-delegate `CustomElement` from the enum. See [`custom_element.rs`](examples/custom_element.rs) for a
+delegate `CustomElement` from the enum. See [`custom_element.rs`](https://github.com/mempirate/guillotine/blob/main/crates/guillotine/examples/custom_element.rs) for a
 complete example.
 
 > [!IMPORTANT]
@@ -274,7 +279,7 @@ complete example.
 
 ## Examples
 
-See the [examples README](./examples).
+See the [examples README](https://github.com/mempirate/guillotine/tree/main/crates/guillotine/examples).
 
 ## Core Concepts
 
