@@ -31,6 +31,12 @@ impl<D> core::ops::Deref for DirectTarget<D> {
     }
 }
 
+impl<D> core::ops::DerefMut for DirectTarget<D> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<D> DirectTarget<D> {
     /// Creates a new [`DirectTarget`] with the given display target.
     pub const fn new(display: D) -> Self {
