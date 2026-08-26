@@ -1,0 +1,57 @@
+[package]
+name = "guillotine"
+version = "0.4.0"
+edition.workspace = true
+description = "A no_std graphical user interface framework in Rust for embedded devices prioritizing resource efficiency and ergonomics."
+repository.workspace = true
+documentation = "https://docs.rs/guillotine"
+categories = ["embedded", "no-std"]
+keywords = ["embedded", "gui", "graphics", "no_std", "embedded-graphics"]
+readme = "README.md"
+license.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+
+[features]
+default = ["defmt", "framebuffer"]
+# Enables defmt formatting on exported types.
+defmt = ["dep:defmt", "embedded-graphics/defmt"]
+# Enables framebuffer rendering support.
+framebuffer = []
+# Enables full flexbox support at the expense of more compute per frame.
+flexbox = []
+
+# Enables the simulator backend for embedded-graphics.
+simulator = ["dep:embedded-graphics-simulator", "dep:sdl2"]
+
+[dependencies]
+embedded-graphics.workspace = true
+thiserror.workspace = true
+
+embedded-graphics-simulator = { workspace = true, optional = true }
+heapless.workspace = true
+sdl2 = { workspace = true, optional = true }
+defmt = { workspace = true, optional = true }
+
+[[example]]
+name = "basic"
+required-features = ["simulator", "flexbox"]
+
+[[example]]
+name = "binary"
+required-features = ["simulator"]
+
+[[example]]
+name = "custom_element"
+required-features = ["simulator"]
+
+[[example]]
+name = "flexbox"
+required-features = ["simulator", "flexbox"]
+
+[[example]]
+name = "power_monitor"
+required-features = ["simulator", "flexbox"]
+
+[lints]
+workspace = true
